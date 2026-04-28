@@ -1,6 +1,7 @@
 pub mod schema;
 pub mod error;
 pub mod db;
+pub mod parser;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {

@@ -54,7 +54,11 @@ pub fn open_in_memory() -> AppResult<Connection> {
 }
 
 fn source_str(s: Source) -> &'static str {
-    match s { Source::Openai => "openai", Source::ClaudeCode => "claude_code" }
+    match s {
+        Source::Openai => "openai",
+        Source::ClaudeWeb => "claude_web",
+        Source::ClaudeCode => "claude_code",
+    }
 }
 
 fn role_str(r: Role) -> &'static str {

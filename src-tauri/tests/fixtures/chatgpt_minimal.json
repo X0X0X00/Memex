@@ -1,0 +1,46 @@
+[
+  {
+    "id": "abc-123",
+    "title": "Hello world chat",
+    "create_time": 1700000000.0,
+    "update_time": 1700000050.0,
+    "default_model_slug": "gpt-4o",
+    "current_node": "node-3",
+    "mapping": {
+      "node-root": {"id": "node-root", "message": null, "parent": null, "children": ["node-1"]},
+      "node-1": {
+        "id": "node-1",
+        "message": {
+          "id": "msg-1",
+          "author": {"role": "user"},
+          "create_time": 1700000010.0,
+          "content": {"content_type": "text", "parts": ["Hi there"]},
+          "metadata": {}
+        },
+        "parent": "node-root", "children": ["node-2"]
+      },
+      "node-2": {
+        "id": "node-2",
+        "message": {
+          "id": "msg-2",
+          "author": {"role": "assistant"},
+          "create_time": 1700000020.0,
+          "content": {"content_type": "text", "parts": ["Hello!"]},
+          "metadata": {"model_slug": "gpt-4o"}
+        },
+        "parent": "node-1", "children": ["node-3"]
+      },
+      "node-3": {
+        "id": "node-3",
+        "message": {
+          "id": "msg-3",
+          "author": {"role": "user"},
+          "create_time": 1700000030.0,
+          "content": {"content_type": "text", "parts": ["Cool, thanks"]},
+          "metadata": {}
+        },
+        "parent": "node-2", "children": []
+      }
+    }
+  }
+]
