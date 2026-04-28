@@ -1,5 +1,7 @@
-use crate::error::{AppError, AppResult};
+use crate::error::AppResult;
+use crate::parser::tokens::count_tokens;
 use crate::schema::*;
+use crate::stats::cost::estimate_cost_usd;
 use serde::Deserialize;
 use serde_json::Value;
 use std::collections::HashMap;
@@ -88,6 +90,11 @@ fn build_one(r: RawConv) -> AppResult<Option<(Conversation, Vec<Message>)>> {
         let model = msg.metadata.get("model_slug")
             .and_then(|v| v.as_str())
             .map(String::from);
+        let tk = count_tokens(&content);
+        let tokens = match role {
+            Role::Assistant => TokenCounts { input: 0, output: tk, cache_read: 0, cache_write: 0 },
+            _ => TokenCounts { input: tk, output: 0, cache_read: 0, cache_write: 0 },
+        };
         messages.push(Message {
             id: format!("{conv_id}:{}", msg.id),
             conversation_id: conv_id.clone(),
@@ -95,7 +102,7 @@ fn build_one(r: RawConv) -> AppResult<Option<(Conversation, Vec<Message>)>> {
             content,
             timestamp: msg.create_time.map(|f| f as i64),
             model,
-            tokens: None,
+            tokens: Some(tokens),
             tool_name: None,
         });
     }
@@ -107,6 +114,17 @@ fn build_one(r: RawConv) -> AppResult<Option<(Conversation, Vec<Message>)>> {
     let updated = r.update_time.map(|f| f as i64).unwrap_or(created);
     let model = messages.iter().rev().find_map(|m| m.model.clone()).or(r.default_model_slug);
 
+    let mut totals = TokenCounts::zero();
+    for m in &messages {
+        if let Some(t) = &m.tokens {
+            totals.input += t.input;
+            totals.output += t.output;
+            totals.cache_read += t.cache_read;
+            totals.cache_write += t.cache_write;
+        }
+    }
+    let estimated_cost_usd = model.as_deref().map(|m| estimate_cost_usd(m, &totals)).unwrap_or(0.0);
+
     let conv = Conversation {
         id: conv_id,
         source: Source::Openai,
@@ -117,8 +135,8 @@ fn build_one(r: RawConv) -> AppResult<Option<(Conversation, Vec<Message>)>> {
         model,
         project: None,
         message_count: messages.len() as u32,
-        tokens: TokenCounts::zero(),
-        estimated_cost_usd: 0.0,
+        tokens: totals,
+        estimated_cost_usd,
     };
     Ok(Some((conv, messages)))
 }
@@ -158,5 +176,3 @@ fn depth(map: &HashMap<String, RawNode>, id: &str, d: u32) -> u32 {
     }
 }
 
-#[allow(dead_code)]
-fn _unused(_: AppError) {}

@@ -60,6 +60,28 @@ fn detect_distinguishes_formats() {
 }
 
 #[test]
+fn openai_token_counts_populated() {
+    let json = std::fs::read_to_string("tests/fixtures/chatgpt_minimal.json").unwrap();
+    let result = openai::parse_conversations_json(&json).unwrap();
+    let (conv, msgs) = &result[0];
+    assert!(conv.tokens.input > 0, "expected input tokens > 0");
+    assert!(conv.tokens.output > 0, "expected output tokens > 0");
+    assert!(msgs.iter().all(|m| m.tokens.is_some()));
+    assert!(conv.estimated_cost_usd > 0.0);
+}
+
+#[test]
+fn claude_web_token_counts_populated() {
+    let json = std::fs::read_to_string("tests/fixtures/claude_web_minimal.json").unwrap();
+    let result = claude_web::parse_conversations_json(&json).unwrap();
+    let (conv, msgs) = &result[0];
+    assert!(conv.tokens.input > 0);
+    assert!(conv.tokens.output > 0);
+    assert!(msgs.iter().all(|m| m.tokens.is_some()));
+    assert!(conv.estimated_cost_usd > 0.0);
+}
+
+#[test]
 fn parse_auto_dispatches_correctly() {
     let openai_json = std::fs::read_to_string("tests/fixtures/chatgpt_minimal.json").unwrap();
     let (fmt, result) = parse_auto(&openai_json).unwrap();

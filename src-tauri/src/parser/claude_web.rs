@@ -1,5 +1,7 @@
 use crate::error::AppResult;
+use crate::parser::tokens::count_tokens;
 use crate::schema::*;
+use crate::stats::cost::estimate_cost_usd;
 use chrono::DateTime;
 use serde::Deserialize;
 use serde_json::Value;
@@ -65,6 +67,11 @@ fn build_one(r: RawConv) -> Option<(Conversation, Vec<Message>)> {
         };
         let content = combine_text(m);
         if content.is_empty() { continue; }
+        let tk = count_tokens(&content);
+        let tokens = match role {
+            Role::Assistant => TokenCounts { input: 0, output: tk, cache_read: 0, cache_write: 0 },
+            _ => TokenCounts { input: tk, output: 0, cache_read: 0, cache_write: 0 },
+        };
         messages.push(Message {
             id: format!("{conv_id}:{}", m.uuid),
             conversation_id: conv_id.clone(),
@@ -72,7 +79,7 @@ fn build_one(r: RawConv) -> Option<(Conversation, Vec<Message>)> {
             content,
             timestamp: m.created_at.as_deref().and_then(parse_iso),
             model: None,
-            tokens: None,
+            tokens: Some(tokens),
             tool_name: None,
         });
     }
@@ -82,6 +89,20 @@ fn build_one(r: RawConv) -> Option<(Conversation, Vec<Message>)> {
     let updated_at = r.updated_at.as_deref().and_then(parse_iso).unwrap_or(created_at);
     let title = pick_title(&r, &messages);
 
+    let mut totals = TokenCounts::zero();
+    for m in &messages {
+        if let Some(t) = &m.tokens {
+            totals.input += t.input;
+            totals.output += t.output;
+            totals.cache_read += t.cache_read;
+            totals.cache_write += t.cache_write;
+        }
+    }
+    // Claude.ai web export doesn't record per-message model. Default to "claude"
+    // which falls back to Sonnet pricing in the cost table.
+    let model_for_cost = "claude";
+    let estimated_cost_usd = estimate_cost_usd(model_for_cost, &totals);
+
     let conv = Conversation {
         id: conv_id,
         source: Source::ClaudeWeb,
@@ -89,11 +110,11 @@ fn build_one(r: RawConv) -> Option<(Conversation, Vec<Message>)> {
         title,
         created_at,
         updated_at,
-        model: None, // Claude.ai web export doesn't record model per message
+        model: None,
         project: None,
         message_count: messages.len() as u32,
-        tokens: TokenCounts::zero(),
-        estimated_cost_usd: 0.0,
+        tokens: totals,
+        estimated_cost_usd,
     };
     Some((conv, messages))
 }
