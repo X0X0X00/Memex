@@ -16,6 +16,10 @@ dist-ssr
 src-tauri/target
 src-tauri/gen
 
+# Build artifacts at repo root (release zips, etc.)
+Memex_*.zip
+Memex_*.dmg
+
 # Memex local DB (in case dev runs in repo)
 *.db
 *.db-shm
