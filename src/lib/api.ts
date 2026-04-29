@@ -4,6 +4,8 @@ import type { ConversationSummary, ImportSummary, Message, StatsReport } from "@
 export const api = {
   importExport: (folder: string) =>
     invoke<ImportSummary>("import_export", { folder }),
+  importClaudeCode: (folder?: string) =>
+    invoke<ImportSummary>("import_claude_code", { folder: folder ?? null }),
   listConversations: () =>
     invoke<ConversationSummary[]>("list_conversations"),
   getConversation: (id: string) =>
