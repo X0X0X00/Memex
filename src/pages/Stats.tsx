@@ -4,7 +4,6 @@ import { api } from "@/lib/api"
 import type { StatsReport } from "@/types"
 import { StatCard } from "@/components/StatCard"
 import { ActivityHeatmap } from "@/components/ActivityHeatmap"
-import { PhrasesList } from "@/components/PhrasesList"
 import { fmtDate, fmtNum, fmtUsd, sourceLabel } from "@/lib/format"
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
@@ -123,36 +122,68 @@ export default function Stats() {
         </section>
       </div>
 
-      <div className="grid md:grid-cols-2 gap-10">
-        <section>
-          <h3 className="text-base font-semibold mb-3">
-            Top 10 things you keep saying
-          </h3>
-          <PhrasesList phrases={s.top_phrases} />
-        </section>
-        <section>
-          <h3 className="text-base font-semibold mb-3">Top topics</h3>
-          <PhrasesList phrases={s.top_topics} />
-        </section>
-      </div>
+      <Breakdown
+        bySource={s.by_source}
+        byModel={s.by_model}
+      />
 
-      <div className="grid md:grid-cols-2 gap-10">
-        {s.by_source.length > 0 && (
-          <section>
-            <h3 className="text-base font-semibold mb-3">By source</h3>
-            <SimpleTable rows={s.by_source.map(([k, n]) => [sourceLabel(k), fmtNum(n)])} />
-          </section>
-        )}
-        {s.by_model.length > 0 && (
-          <section>
-            <h3 className="text-base font-semibold mb-3">By model</h3>
-            <SimpleTable
-              rows={s.by_model.map(([k, n]) => [k || "(unknown)", fmtNum(n)])}
-              monoFirstCol
-            />
-          </section>
-        )}
-      </div>
+      <section className="border border-dashed border-border rounded-lg p-5 max-w-3xl">
+        <h3 className="text-base font-semibold mb-1">
+          Top phrases & topics
+        </h3>
+        <p className="text-muted-foreground text-sm leading-relaxed">
+          Coming in <strong className="text-foreground">v0.3</strong> with optional LLM-powered
+          analysis (bring-your-own API key, or local Ollama — privacy preserved). Pure keyword
+          extraction surfaces a lot of noise (pasted code, repeated context blocks), so this
+          panel is paused until the LLM path lands.
+        </p>
+      </section>
+    </div>
+  )
+}
+
+function Breakdown({
+  bySource,
+  byModel,
+}: {
+  bySource: [string, number][]
+  byModel: [string, number][]
+}) {
+  // Hide the entire section when there's nothing useful to show — i.e.,
+  // a single source AND every conversation has unknown / single model.
+  const meaningfulSource = bySource.length > 1
+  const meaningfulModel =
+    byModel.length > 1 || (byModel.length === 1 && byModel[0][0] !== "" && byModel[0][0] !== "(unknown)")
+
+  if (!meaningfulSource && !meaningfulModel) {
+    // Compact single-line summary instead.
+    const total = bySource.reduce((acc, [, n]) => acc + n, 0)
+    if (total === 0) return null
+    const label = bySource[0]?.[0] ? sourceLabel(bySource[0][0]) : "imported"
+    return (
+      <p className="text-sm text-muted-foreground">
+        {fmtNum(total)} conversations from <span className="text-foreground">{label}</span>.
+      </p>
+    )
+  }
+
+  return (
+    <div className="grid md:grid-cols-2 gap-10">
+      {meaningfulSource && (
+        <section>
+          <h3 className="text-base font-semibold mb-3">By source</h3>
+          <SimpleTable rows={bySource.map(([k, n]) => [sourceLabel(k), fmtNum(n)])} />
+        </section>
+      )}
+      {meaningfulModel && (
+        <section>
+          <h3 className="text-base font-semibold mb-3">By model</h3>
+          <SimpleTable
+            rows={byModel.map(([k, n]) => [k || "(unknown)", fmtNum(n)])}
+            monoFirstCol
+          />
+        </section>
+      )}
     </div>
   )
 }
