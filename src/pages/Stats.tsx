@@ -61,9 +61,21 @@ export default function Stats() {
         <StatCard
           label="Estimated cost"
           value={fmtUsd(s.estimated_cost_usd)}
-          sub="If billed via API · est. only"
+          sub="API-equivalent · not subscription"
         />
       </div>
+
+      <p className="text-xs text-muted-foreground -mt-6 max-w-3xl leading-relaxed">
+        <strong className="text-foreground">Note on cost:</strong> this is the{" "}
+        <em>API-equivalent</em> estimate — what these tokens would cost via the
+        Anthropic / OpenAI APIs at current per-token rates, summed per-message
+        against the model that handled it. It is <em>not</em> what you actually
+        paid: ChatGPT Plus / Claude Pro subscriptions are flat-rate and don't
+        map to this number. Token counts for <strong>Claude Code</strong> sessions
+        are exact (from the API response). Token counts for <strong>web exports</strong>{" "}
+        (ChatGPT export, Claude.ai export) are estimated via tiktoken cl100k —
+        approximate, especially for non-English text.
+      </p>
 
       <section>
         <h3 className="text-base font-semibold mb-1">Activity</h3>
