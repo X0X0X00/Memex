@@ -39,6 +39,17 @@ CREATE TABLE IF NOT EXISTS messages (
 CREATE INDEX IF NOT EXISTS idx_messages_conv ON messages(conversation_id, seq);
 CREATE INDEX IF NOT EXISTS idx_conversations_created ON conversations(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_conversations_source ON conversations(source);
+
+CREATE TABLE IF NOT EXISTS tool_calls (
+    id TEXT PRIMARY KEY,
+    message_id TEXT NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+    conversation_id TEXT NOT NULL,
+    tool_name TEXT NOT NULL,
+    seq INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_tool_calls_name ON tool_calls(tool_name);
+CREATE INDEX IF NOT EXISTS idx_tool_calls_msg ON tool_calls(message_id);
 "#;
 
 pub fn open(path: &Path) -> AppResult<Connection> {
@@ -112,6 +123,22 @@ pub fn count_conversations(conn: &Connection) -> AppResult<i64> {
     Ok(conn.query_row("SELECT COUNT(*) FROM conversations", [], |r| r.get::<_, i64>(0))?)
 }
 
+pub fn insert_tool_call(
+    conn: &Connection,
+    id: &str,
+    message_id: &str,
+    conversation_id: &str,
+    tool_name: &str,
+    seq: u32,
+) -> AppResult<()> {
+    conn.execute(
+        "INSERT OR REPLACE INTO tool_calls (id, message_id, conversation_id, tool_name, seq)
+         VALUES (?1, ?2, ?3, ?4, ?5)",
+        params![id, message_id, conversation_id, tool_name, seq],
+    )?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -152,5 +179,45 @@ mod tests {
         insert_message(&conn, 0, &m).unwrap();
         let n: i64 = conn.query_row("SELECT COUNT(*) FROM messages", [], |r| r.get(0)).unwrap();
         assert_eq!(n, 1);
+    }
+
+    #[test]
+    fn tool_calls_table_exists() {
+        let conn = open_in_memory().unwrap();
+        let n: i64 = conn
+            .query_row("SELECT COUNT(*) FROM tool_calls", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(n, 0);
+    }
+
+    #[test]
+    fn insert_tool_call_persists() {
+        let conn = open_in_memory().unwrap();
+        upsert_conversation(&conn, &sample_conv()).unwrap();
+        let m = Message {
+            id: "m-1".into(),
+            conversation_id: "conv-1".into(),
+            role: Role::Assistant,
+            content: "x".into(),
+            timestamp: Some(0),
+            model: None,
+            tokens: None,
+            tool_name: Some("Bash".into()),
+        };
+        insert_message(&conn, 0, &m).unwrap();
+        insert_tool_call(&conn, "m-1:tu1", "m-1", "conv-1", "Bash", 0).unwrap();
+        insert_tool_call(&conn, "m-1:tu2", "m-1", "conv-1", "Read", 1).unwrap();
+        let n: i64 = conn
+            .query_row("SELECT COUNT(*) FROM tool_calls", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(n, 2);
+        let tools: Vec<String> = {
+            let mut stmt = conn
+                .prepare("SELECT tool_name FROM tool_calls ORDER BY seq")
+                .unwrap();
+            let rows = stmt.query_map([], |r| r.get::<_, String>(0)).unwrap();
+            rows.filter_map(Result::ok).collect()
+        };
+        assert_eq!(tools, vec!["Bash".to_string(), "Read".to_string()]);
     }
 }
