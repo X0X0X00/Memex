@@ -4,6 +4,10 @@ import { api } from "@/lib/api"
 import type { StatsReport } from "@/types"
 import { StatCard } from "@/components/StatCard"
 import { ActivityHeatmap } from "@/components/ActivityHeatmap"
+import { CostOverTimeChart } from "@/components/CostOverTimeChart"
+import { ProjectTable } from "@/components/ProjectTable"
+import { ToolUsageBars } from "@/components/ToolUsageBars"
+import { LengthHistogram } from "@/components/LengthHistogram"
 import { fmtDate, fmtNum, fmtUsd, sourceLabel } from "@/lib/format"
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
@@ -121,6 +125,41 @@ export default function Stats() {
           </div>
         </section>
       </div>
+
+      {s.cost_over_time.points.length > 0 && (
+        <section>
+          <h3 className="text-base font-semibold mb-3">💰 Cost over time</h3>
+          <CostOverTimeChart series={s.cost_over_time} />
+        </section>
+      )}
+
+      {s.by_project.length > 0 && (
+        <section>
+          <h3 className="text-base font-semibold mb-1">📂 By project</h3>
+          <p className="text-xs text-muted-foreground mb-3">
+            Claude Code conversations grouped by working directory.
+          </p>
+          <ProjectTable rows={s.by_project} />
+        </section>
+      )}
+
+      {s.tool_usage.length > 0 && (
+        <section>
+          <h3 className="text-base font-semibold mb-1">🛠 Tool usage</h3>
+          <p className="text-xs text-muted-foreground mb-3">
+            Top tools called across all Claude Code sessions.
+          </p>
+          <ToolUsageBars rows={s.tool_usage} />
+        </section>
+      )}
+
+      <section>
+        <h3 className="text-base font-semibold mb-1">📏 Message length</h3>
+        <p className="text-xs text-muted-foreground mb-3">
+          How long are your prompts? (token-count buckets)
+        </p>
+        <LengthHistogram buckets={s.message_length} />
+      </section>
 
       <Breakdown
         bySource={s.by_source}
