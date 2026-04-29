@@ -36,12 +36,19 @@ export interface ImportSummary {
   source: string
 }
 
-export interface DailyActivity { date: string; messages: number }
+export interface DailyActivity {
+  date: string
+  messages: number
+  conversations: number
+}
 export interface ActivityReport {
   daily: DailyActivity[]
   busiest_day: DailyActivity | null
+  busiest_day_by_conversations: DailyActivity | null
   by_hour: number[]
+  by_hour_conversations: number[]
   by_weekday: number[]
+  by_weekday_conversations: number[]
 }
 export interface PhraseStat { phrase: string; count: number; score: number }
 

@@ -17,10 +17,13 @@ import {
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
 
+type ActivityMetric = "messages" | "conversations"
+
 export default function Stats() {
   const [s, setS] = useState<StatsReport | null>(null)
   const [loading, setLoading] = useState(true)
   const [exportOpen, setExportOpen] = useState(false)
+  const [activityMetric, setActivityMetric] = useState<ActivityMetric>("messages")
 
   useEffect(() => {
     api.getStats().then(setS).finally(() => setLoading(false))
@@ -48,8 +51,16 @@ export default function Stats() {
     ? `${fmtDate(s.first_at)} – ${fmtDate(s.last_at)}`
     : "—"
 
-  const hourData = s.activity.by_hour.map((v, i) => ({ hour: i, count: v }))
-  const weekData = s.activity.by_weekday.map((v, i) => ({ day: WEEKDAYS[i], count: v }))
+  const isMsgs = activityMetric === "messages"
+  const unit = isMsgs ? "msgs" : "convs"
+  const hourSrc = isMsgs ? s.activity.by_hour : s.activity.by_hour_conversations
+  const weekSrc = isMsgs ? s.activity.by_weekday : s.activity.by_weekday_conversations
+  const busiest = isMsgs ? s.activity.busiest_day : s.activity.busiest_day_by_conversations
+  const busiestCount = busiest
+    ? (isMsgs ? busiest.messages : busiest.conversations)
+    : 0
+  const hourData = hourSrc.map((v, i) => ({ hour: i, count: v }))
+  const weekData = weekSrc.map((v, i) => ({ day: WEEKDAYS[i], count: v }))
   const peakHour = hourData.reduce((a, b) => (b.count > a.count ? b : a), { hour: 0, count: 0 })
 
   return (
@@ -89,25 +100,28 @@ export default function Stats() {
       </p>
 
       <section>
-        <h3 className="text-base font-semibold mb-1">Activity</h3>
-        {s.activity.busiest_day && (
+        <div className="flex items-baseline justify-between flex-wrap gap-2 mb-1">
+          <h3 className="text-base font-semibold">Activity</h3>
+          <MetricToggle metric={activityMetric} onChange={setActivityMetric} />
+        </div>
+        {busiest && (
           <p className="text-sm text-muted-foreground mb-4">
             Busiest day:{" "}
             <span className="text-foreground font-medium">
-              {s.activity.busiest_day.date}
+              {fmtDate(Date.parse(busiest.date) / 1000)}
             </span>{" "}
-            ({s.activity.busiest_day.messages} messages).
-            Peak hour: {peakHour.hour}:00 ({peakHour.count} msgs).
+            ({fmtNum(busiestCount)} {unit}).
+            Peak hour: {peakHour.hour}:00 ({fmtNum(peakHour.count)} {unit}).
           </p>
         )}
         <div className="overflow-x-auto pb-2">
-          <ActivityHeatmap daily={s.activity.daily} />
+          <ActivityHeatmap daily={s.activity.daily} metric={activityMetric} />
         </div>
       </section>
 
       <div className="grid md:grid-cols-2 gap-8">
         <section>
-          <h3 className="text-base font-semibold mb-3">By hour of day</h3>
+          <h3 className="text-base font-semibold mb-3">By hour of day ({unit})</h3>
           <div className="h-48">
             <ResponsiveContainer>
               <BarChart data={hourData}>
@@ -120,7 +134,7 @@ export default function Stats() {
           </div>
         </section>
         <section>
-          <h3 className="text-base font-semibold mb-3">By weekday</h3>
+          <h3 className="text-base font-semibold mb-3">By weekday ({unit})</h3>
           <div className="h-48">
             <ResponsiveContainer>
               <BarChart data={weekData}>
@@ -237,6 +251,37 @@ function Breakdown({
           />
         </section>
       )}
+    </div>
+  )
+}
+
+function MetricToggle({
+  metric,
+  onChange,
+}: {
+  metric: ActivityMetric
+  onChange: (m: ActivityMetric) => void
+}) {
+  const opts: { v: ActivityMetric; label: string }[] = [
+    { v: "messages", label: "Messages" },
+    { v: "conversations", label: "Conversations" },
+  ]
+  return (
+    <div className="inline-flex rounded-md border border-border overflow-hidden text-xs">
+      {opts.map(({ v, label }) => (
+        <button
+          key={v}
+          onClick={() => onChange(v)}
+          className={
+            "px-3 py-1 transition-colors " +
+            (metric === v
+              ? "bg-primary text-primary-foreground"
+              : "text-muted-foreground hover:bg-accent")
+          }
+        >
+          {label}
+        </button>
+      ))}
     </div>
   )
 }
