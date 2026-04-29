@@ -21,6 +21,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::import_export,
+            commands::import_claude_code,
             commands::list_conversations,
             commands::get_conversation,
             commands::get_stats,

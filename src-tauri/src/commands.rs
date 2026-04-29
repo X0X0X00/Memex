@@ -265,3 +265,48 @@ pub fn clear_data(state: tauri::State<AppState>) -> Result<(), String> {
     conn.execute_batch("DELETE FROM messages; DELETE FROM conversations;")
         .map_err(|e| e.to_string())
 }
+
+#[tauri::command]
+pub fn import_claude_code(
+    folder: Option<String>,
+    state: tauri::State<AppState>,
+) -> Result<ImportSummary, String> {
+    do_import_cc(folder, &state).map_err(|e| e.to_string())
+}
+
+fn do_import_cc(
+    folder: Option<String>,
+    state: &tauri::State<AppState>,
+) -> AppResult<ImportSummary> {
+    let dir = match folder {
+        Some(s) => PathBuf::from(s),
+        None => crate::parser::claude_code::default_projects_dir().ok_or_else(|| {
+            crate::error::AppError::Parse("could not locate ~/.claude/projects".into())
+        })?,
+    };
+    if !dir.is_dir() {
+        return Err(crate::error::AppError::Parse(format!(
+            "not a directory: {}",
+            dir.display()
+        )));
+    }
+    let parsed = crate::parser::claude_code::parse_projects_dir(&dir)?;
+    let mut conn = state.db.lock().unwrap();
+    let tx = conn.transaction()?;
+    let mut convs = 0u32;
+    let mut msgs = 0u32;
+    for (c, ms) in parsed {
+        db::upsert_conversation(&tx, &c)?;
+        for (i, m) in ms.iter().enumerate() {
+            db::insert_message(&tx, i as u32, m)?;
+            msgs += 1;
+        }
+        convs += 1;
+    }
+    tx.commit()?;
+    Ok(ImportSummary {
+        conversations_added: convs,
+        messages_added: msgs,
+        source: "claude_code".into(),
+    })
+}

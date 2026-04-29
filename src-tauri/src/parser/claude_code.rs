@@ -54,6 +54,10 @@ pub fn parse_session_str(raw: &str) -> AppResult<Option<(Conversation, Vec<Messa
                 }
             }
             "user" => {
+                // Skip cc-injected meta messages (caveats / slash command echoes).
+                if v.get("isMeta").and_then(|x| x.as_bool()) == Some(true) {
+                    continue;
+                }
                 if let Some(m) = build_user_message(&v) {
                     if first_ts.is_none() {
                         first_ts = m.timestamp;
@@ -125,7 +129,7 @@ pub fn parse_session_str(raw: &str) -> AppResult<Option<(Conversation, Vec<Messa
         .or_else(|| {
             messages
                 .iter()
-                .find(|m| m.role == Role::User)
+                .find(|m| m.role == Role::User && !is_command_echo(&m.content))
                 .map(|m| {
                     let snippet: String = m.content.chars().take(60).collect();
                     snippet
@@ -310,6 +314,21 @@ fn flatten_inner_content(v: &serde_json::Value) -> String {
 
 fn parse_iso(s: &str) -> Option<i64> {
     DateTime::parse_from_rfc3339(s).ok().map(|dt| dt.timestamp())
+}
+
+/// True if the message is one of cc's auto-injected wrappers
+/// (slash-command echoes, system reminders, caveats). Used to pick a
+/// readable title.
+fn is_command_echo(s: &str) -> bool {
+    let trimmed = s.trim_start();
+    trimmed.starts_with("<command-name>")
+        || trimmed.starts_with("<command-message>")
+        || trimmed.starts_with("<command-args>")
+        || trimmed.starts_with("<local-command-caveat>")
+        || trimmed.starts_with("<local-command-stdout>")
+        || trimmed.starts_with("<local-command-stderr>")
+        || trimmed.starts_with("<system-reminder>")
+        || trimmed.starts_with("[tool_result]")
 }
 
 pub fn parse_projects_dir(root: &Path) -> AppResult<Vec<(Conversation, Vec<Message>)>> {
