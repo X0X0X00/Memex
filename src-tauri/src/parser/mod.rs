@@ -4,6 +4,7 @@ use serde_json::Value;
 
 pub mod openai;
 pub mod claude_web;
+pub mod claude_code;
 pub mod tokens;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

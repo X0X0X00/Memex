@@ -1,4 +1,4 @@
-use memex_lib::parser::{detect_format, parse_auto, openai, claude_web, DetectedFormat};
+use memex_lib::parser::{detect_format, parse_auto, openai, claude_web, claude_code, DetectedFormat};
 use memex_lib::schema::{Role, Source};
 
 #[test]
@@ -79,6 +79,49 @@ fn claude_web_token_counts_populated() {
     assert!(conv.tokens.output > 0);
     assert!(msgs.iter().all(|m| m.tokens.is_some()));
     assert!(conv.estimated_cost_usd > 0.0);
+}
+
+#[test]
+fn claude_code_minimal_parses() {
+    let path = "tests/fixtures/claude_code_minimal.jsonl";
+    let result = claude_code::parse_session_file(path).unwrap();
+    let (conv, msgs) = result.expect("session should produce a conversation");
+
+    assert_eq!(conv.source, Source::ClaudeCode);
+    assert_eq!(conv.native_id, "s1");
+    assert_eq!(conv.title, "Hello world session");
+    assert_eq!(conv.model.as_deref(), Some("claude-sonnet-4-6"));
+    assert_eq!(conv.project.as_deref(), Some("/tmp/proj"));
+    // u1 (text), a1 (text), u2 (tool_result), a2 (tool_use+text) — 4 messages
+    assert_eq!(conv.message_count, 4);
+
+    // Real token counts from the assistant `usage` block.
+    assert_eq!(conv.tokens.input, 42 + 50);
+    assert_eq!(conv.tokens.output, 7 + 10);
+    assert_eq!(conv.tokens.cache_read, 12);
+    assert_eq!(conv.tokens.cache_write, 0);
+
+    // Cost from claude-sonnet-4-6 pricing exactly.
+    let expected = (92.0 / 1e6) * 3.0 + (17.0 / 1e6) * 15.0 + (12.0 / 1e6) * 0.3;
+    assert!(
+        (conv.estimated_cost_usd - expected).abs() < 1e-6,
+        "got {}, expected {}",
+        conv.estimated_cost_usd,
+        expected
+    );
+
+    // Conversation_id rewrites should be consistent.
+    for m in msgs {
+        assert_eq!(m.conversation_id, conv.id);
+        assert!(m.id.starts_with(&conv.id));
+    }
+}
+
+#[test]
+fn claude_code_empty_session_returns_none() {
+    let raw = r#"{"type":"permission-mode","sessionId":"s1","permissionMode":"default"}"#;
+    let r = claude_code::parse_session_str(raw).unwrap();
+    assert!(r.is_none());
 }
 
 #[test]
