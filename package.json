@@ -2,6 +2,13 @@
   "name": "memex",
   "private": true,
   "version": "0.2.3",
+  "license": "MIT",
+  "author": "zzh",
+  "homepage": "https://github.com/X0X0X00/Memex",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/X0X0X00/Memex.git"
+  },
   "type": "module",
   "scripts": {
     "dev": "vite",

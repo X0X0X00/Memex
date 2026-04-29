@@ -4,6 +4,9 @@ version = "0.2.3"
 description = "Browse and analyze your AI conversation history. Local-only."
 authors = ["zzh"]
 edition = "2021"
+license = "MIT"
+repository = "https://github.com/X0X0X00/Memex"
+homepage = "https://github.com/X0X0X00/Memex"
 
 [lib]
 name = "memex_lib"
