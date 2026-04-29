@@ -280,6 +280,11 @@ pub fn clear_data(state: tauri::State<AppState>) -> Result<(), String> {
 }
 
 #[tauri::command]
+pub fn save_png(path: String, bytes: Vec<u8>) -> Result<(), String> {
+    std::fs::write(&path, &bytes).map_err(|e| format!("write failed: {e}"))
+}
+
+#[tauri::command]
 pub fn import_claude_code(
     folder: Option<String>,
     state: tauri::State<AppState>,

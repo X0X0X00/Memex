@@ -26,6 +26,7 @@ pub fn run() {
             commands::get_conversation,
             commands::get_stats,
             commands::clear_data,
+            commands::save_png,
         ])
         .run(tauri::generate_context!())
         .expect("error while running memex");
