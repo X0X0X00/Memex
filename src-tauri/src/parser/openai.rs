@@ -115,15 +115,19 @@ fn build_one(r: RawConv) -> AppResult<Option<(Conversation, Vec<Message>)>> {
     let model = messages.iter().rev().find_map(|m| m.model.clone()).or(r.default_model_slug);
 
     let mut totals = TokenCounts::zero();
+    let mut estimated_cost_usd = 0.0;
     for m in &messages {
         if let Some(t) = &m.tokens {
             totals.input += t.input;
             totals.output += t.output;
             totals.cache_read += t.cache_read;
             totals.cache_write += t.cache_write;
+            // Per-message cost: prefer the message's own model, then the
+            // conversation-level fallback (last assistant model or default_model_slug).
+            let m_model = m.model.as_deref().or(model.as_deref()).unwrap_or("");
+            estimated_cost_usd += estimate_cost_usd(m_model, t);
         }
     }
-    let estimated_cost_usd = model.as_deref().map(|m| estimate_cost_usd(m, &totals)).unwrap_or(0.0);
 
     let conv = Conversation {
         id: conv_id,

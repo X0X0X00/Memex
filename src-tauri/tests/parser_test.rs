@@ -125,6 +125,65 @@ fn claude_code_empty_session_returns_none() {
 }
 
 #[test]
+fn openai_per_message_cost_uses_message_model() {
+    // Two assistant messages: one gpt-4o ($10/M output), one gpt-4o-mini ($0.6/M output).
+    // Per-message cost = each priced separately. The pre-v0.2 logic would
+    // pick the LAST model (gpt-4o-mini) and apply it to BOTH messages —
+    // giving a much lower number than reality.
+    let json = r#"[{
+      "id":"c1","title":"x","create_time":1.0,"update_time":4.0,
+      "default_model_slug":"gpt-4o","current_node":"n4",
+      "mapping":{
+        "root":{"id":"root","message":null,"parent":null,"children":["n1"]},
+        "n1":{"id":"n1","parent":"root","children":["n2"],"message":{
+            "id":"m1","author":{"role":"user"},"create_time":1.0,
+            "content":{"content_type":"text","parts":["first user"]},"metadata":{}}},
+        "n2":{"id":"n2","parent":"n1","children":["n3"],"message":{
+            "id":"m2","author":{"role":"assistant"},"create_time":2.0,
+            "content":{"content_type":"text","parts":["expensive answer that uses many tokens to inflate the gpt-4o output cost"]},
+            "metadata":{"model_slug":"gpt-4o"}}},
+        "n3":{"id":"n3","parent":"n2","children":["n4"],"message":{
+            "id":"m3","author":{"role":"user"},"create_time":3.0,
+            "content":{"content_type":"text","parts":["second user"]},"metadata":{}}},
+        "n4":{"id":"n4","parent":"n3","children":[],"message":{
+            "id":"m4","author":{"role":"assistant"},"create_time":4.0,
+            "content":{"content_type":"text","parts":["cheap answer with similar length tokens to inflate the mini output cost"]},
+            "metadata":{"model_slug":"gpt-4o-mini"}}}
+      }}]"#;
+    let r = openai::parse_conversations_json(json).unwrap();
+    let (conv, msgs) = &r[0];
+
+    let m4o = msgs.iter().find(|m| m.model.as_deref() == Some("gpt-4o")).unwrap();
+    let mmini = msgs.iter().find(|m| m.model.as_deref() == Some("gpt-4o-mini")).unwrap();
+    let t4o = m4o.tokens.as_ref().unwrap();
+    let tmini = mmini.tokens.as_ref().unwrap();
+
+    let cost_4o = (t4o.input as f64 / 1e6) * 2.5 + (t4o.output as f64 / 1e6) * 10.0;
+    let cost_mini = (tmini.input as f64 / 1e6) * 0.15 + (tmini.output as f64 / 1e6) * 0.6;
+    let expected = cost_4o + cost_mini;
+
+    // Tolerance covers the small extra charge for user-message input tokens
+    // billed at the fallback (last-known) model rate.
+    assert!(
+        (conv.estimated_cost_usd - expected).abs() < 1e-5,
+        "per-msg cost should be ~${expected}, got ${}",
+        conv.estimated_cost_usd
+    );
+
+    // The single-model fallback (using last model = gpt-4o-mini) would be much lower.
+    let totals_total_in = t4o.input + tmini.input;
+    let totals_total_out = t4o.output + tmini.output;
+    let single_model_lowball =
+        (totals_total_in as f64 / 1e6) * 0.15 + (totals_total_out as f64 / 1e6) * 0.6;
+    assert!(
+        conv.estimated_cost_usd > single_model_lowball * 1.5,
+        "per-msg should beat single-model-mini lowball; got {} vs lowball {}",
+        conv.estimated_cost_usd,
+        single_model_lowball
+    );
+}
+
+#[test]
 fn parse_auto_dispatches_correctly() {
     let openai_json = std::fs::read_to_string("tests/fixtures/chatgpt_minimal.json").unwrap();
     let (fmt, result) = parse_auto(&openai_json).unwrap();
