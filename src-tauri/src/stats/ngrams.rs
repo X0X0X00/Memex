@@ -21,9 +21,11 @@ pub fn top_phrases_for_user(conn: &Connection, k: usize) -> AppResult<Vec<Phrase
 }
 
 pub fn top_phrases(texts: &[String], k: usize) -> Vec<PhraseStat> {
+    // Catch-phrases must be at least 2 tokens — single-word frequency belongs
+    // in topic ranking, not "things you keep saying".
     let mut counts: HashMap<String, u32> = HashMap::new();
     for t in texts {
-        for ngram in extract_ngrams(t) {
+        for ngram in extract_phrase_ngrams(t) {
             *counts.entry(ngram).or_insert(0) += 1;
         }
     }
@@ -51,18 +53,27 @@ fn is_too_short_or_noisy(p: &str) -> bool {
 }
 
 pub fn extract_ngrams(text: &str) -> Vec<String> {
+    extract_ngrams_with_range(text, 1, 3)
+}
+
+/// Multi-word phrases only (no 1-grams). Used for "things you keep saying"
+/// where single words are too generic.
+pub fn extract_phrase_ngrams(text: &str) -> Vec<String> {
+    extract_ngrams_with_range(text, 2, 3)
+}
+
+fn extract_ngrams_with_range(text: &str, min_n: usize, max_n: usize) -> Vec<String> {
     let mut out = Vec::new();
-    // Split into "lines" by both \n and Chinese 。/！/？ — anything paragraph-shaped.
     for line in text.split(|c: char| c == '\n' || c == '。' || c == '！' || c == '？') {
         if is_template_line(line) {
             continue;
         }
-        out.extend(extract_ngrams_line(line));
+        out.extend(extract_ngrams_line(line, min_n, max_n));
     }
     out
 }
 
-fn extract_ngrams_line(text: &str) -> Vec<String> {
+fn extract_ngrams_line(text: &str, min_n: usize, max_n: usize) -> Vec<String> {
     let cjk = cjk_ratio(text);
     let (tokens, stop): (Vec<String>, &[&str]) = if cjk > 0.3 {
         (tokenize_zh(text), ZH_STOPWORDS)
@@ -75,11 +86,18 @@ fn extract_ngrams_line(text: &str) -> Vec<String> {
         .filter(|t| !stop.contains(t))
         .collect();
     let mut out = Vec::new();
-    for n in 1..=3 {
+    for n in min_n..=max_n {
         if filtered.len() < n {
             continue;
         }
         for w in filtered.windows(n) {
+            // Reject windows whose tokens are *all* template noise.
+            // This catches "option", "option b", "question point question",
+            // "answer a", "step 1 step 2 step 3" etc. without removing
+            // genuine phrases that happen to contain one such word.
+            if w.iter().all(|t| is_template_noise(t)) {
+                continue;
+            }
             let phrase = if cjk > 0.3 { w.concat() } else { w.join(" ") };
             out.push(phrase.to_lowercase());
         }
@@ -98,6 +116,22 @@ fn is_template_line(line: &str) -> bool {
         .unwrap()
     });
     BULLET.find_iter(line).count() >= 3
+}
+
+/// True for words that are pure annotation/template noise — always uninteresting
+/// as a stand-alone "phrase" or "topic". A phrase is filtered only when ALL of
+/// its tokens are template noise; mixed phrases like "data analysis" survive.
+fn is_template_noise(token: &str) -> bool {
+    matches!(
+        token,
+        "option" | "options" | "question" | "questions" | "answer" | "answers"
+            | "choice" | "choices" | "step" | "steps" | "task" | "tasks"
+            | "item" | "items" | "point" | "points" | "letter" | "label"
+            // Single-letter / short bullet identifiers
+            | "a" | "b" | "c" | "d" | "e" | "f" | "g" | "h"
+            // Common Chinese template markers
+            | "选项" | "题目" | "问题" | "步骤" | "答案" | "选" | "题"
+    ) || token.parse::<u32>().is_ok() // bare numeric bullet (1, 2, 23...)
 }
 
 fn cjk_ratio(s: &str) -> f64 {
@@ -220,5 +254,44 @@ mod tests {
         assert!(is_template_line(
             "Question 1. Option A. Option B. Option C."
         ));
+    }
+
+    #[test]
+    fn short_template_messages_dont_pollute_top_phrases() {
+        // Reproduce the v0.1/v0.2 bug: many SHORT messages each containing
+        // exactly one "option/question" — none of them trip the per-line
+        // 3-marker template filter, but cumulatively they dominate top phrases.
+        let mut texts: Vec<String> = (1..=30)
+            .map(|i| format!("question {}", i))
+            .collect();
+        texts.extend((1..=30).map(|_| "option a is correct".to_string()));
+        texts.extend((1..=30).map(|_| "option b is correct".to_string()));
+        // Real catch-phrase, fewer occurrences.
+        for _ in 0..6 {
+            texts.push("doesn't really work for me".to_string());
+        }
+        let r = top_phrases(&texts, 5);
+        let phrases: Vec<&str> = r.iter().map(|p| p.phrase.as_str()).collect();
+
+        // Pure-template phrases should be absent.
+        for noisy in ["option", "question", "option b", "option a", "answer a"] {
+            assert!(
+                !phrases.iter().any(|p| *p == noisy),
+                "pure-template phrase {:?} should be filtered, got {:?}",
+                noisy,
+                phrases
+            );
+        }
+        // Single-word phrases shouldn't appear at all (top_phrases is 2+ grams).
+        for p in &phrases {
+            assert!(p.contains(' ') || p.chars().any(|c| (c as u32) >= 0x4E00),
+                "single-word phrase {:?} leaked into top phrases", p);
+        }
+        // The actual catch-phrase should surface.
+        assert!(
+            phrases.iter().any(|p| p.contains("doesn't") || p.contains("work")),
+            "real catch-phrase missing, got {:?}",
+            phrases
+        );
     }
 }

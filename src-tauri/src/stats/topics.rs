@@ -39,12 +39,25 @@ pub fn top_topics(conn: &Connection, k: usize) -> AppResult<Vec<PhraseStat>> {
         doc_terms.push(tf);
     }
 
+    // High-DF cap: a term appearing in more than this fraction of conversations
+    // is treated as a stopword for topic ranking (it's not "topical" — it's
+    // a structural / domain word that's everywhere).
+    let high_df_cap = (n_docs * 0.5).ceil() as u32;
+
     let mut score: HashMap<String, f64> = HashMap::new();
     let mut count: HashMap<String, u32> = HashMap::new();
     for tf in &doc_terms {
         for (term, freq) in tf {
-            let idf = ((n_docs + 1.0) / (*df.get(term).unwrap_or(&1) as f64 + 1.0)).ln() + 1.0;
-            *score.entry(term.clone()).or_insert(0.0) += (*freq as f64) * idf;
+            let term_df = *df.get(term).unwrap_or(&1);
+            if term_df > high_df_cap {
+                continue;
+            }
+            let idf = ((n_docs + 1.0) / (term_df as f64 + 1.0)).ln() + 1.0;
+            // Sublinear TF (1 + ln(tf)) keeps a single message with hundreds of
+            // repetitions from drowning out a topic that genuinely shows up
+            // across many conversations.
+            let tf_weight = 1.0 + (*freq as f64).ln();
+            *score.entry(term.clone()).or_insert(0.0) += tf_weight * idf;
             *count.entry(term.clone()).or_insert(0) += freq;
         }
     }
