@@ -45,6 +45,34 @@ export interface ActivityReport {
 }
 export interface PhraseStat { phrase: string; count: number; score: number }
 
+export type BucketKind = "daily" | "weekly" | "monthly"
+
+export interface CostPoint {
+  bucket_label: string
+  by_model_group: [string, number][]
+}
+
+export interface CostSeries {
+  bucket: BucketKind
+  points: CostPoint[]
+}
+
+export interface ProjectRow {
+  project: string
+  display_name: string
+  conv_count: number
+  msg_count: number
+  token_count: number
+  cost_usd: number
+  first_at: number
+  last_at: number
+}
+
+export interface LengthBucket {
+  label: string
+  n: number
+}
+
 export interface StatsReport {
   total_conversations: number
   total_messages: number
@@ -57,4 +85,8 @@ export interface StatsReport {
   top_topics: PhraseStat[]
   by_model: [string, number][]
   by_source: [string, number][]
+  cost_over_time: CostSeries
+  by_project: ProjectRow[]
+  tool_usage: [string, number][]
+  message_length: LengthBucket[]
 }
