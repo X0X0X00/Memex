@@ -38,3 +38,19 @@ const MODEL_COLORS: Record<string, string> = {
 export function modelGroupColor(group: string): string {
   return MODEL_COLORS[group] ?? "#64748b"
 }
+
+/**
+ * Compact token count for the poster hero (always show 1 decimal):
+ *   850          → "850"
+ *   1_230        → "1.2k"
+ *   665_392      → "665k"
+ *   2_345_000    → "2.3M"
+ *   12_345_000   → "12M"
+ */
+export function fmtTokensCompact(n: number): string {
+  if (n >= 10_000_000) return Math.round(n / 1_000_000) + "M"
+  if (n >= 1_000_000)  return (n / 1_000_000).toFixed(1) + "M"
+  if (n >= 100_000)    return Math.round(n / 1_000) + "k"
+  if (n >= 1_000)      return (n / 1_000).toFixed(1) + "k"
+  return n.toLocaleString()
+}
