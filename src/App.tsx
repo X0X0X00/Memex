@@ -9,8 +9,8 @@ const navItems = [
 
 export default function App() {
   return (
-    <div className="min-h-screen flex bg-background text-foreground">
-      <aside className="w-56 border-r border-border p-4 flex flex-col">
+    <div className="h-screen flex bg-background text-foreground overflow-hidden">
+      <aside className="w-56 shrink-0 border-r border-border p-4 flex flex-col h-full">
         <div className="px-2 mb-6">
           <h1 className="text-lg font-semibold tracking-tight">Memex</h1>
           <p className="text-xs text-muted-foreground mt-0.5">Local AI history</p>
@@ -34,10 +34,10 @@ export default function App() {
           ))}
         </nav>
         <div className="mt-auto px-3 text-[11px] text-muted-foreground">
-          v0.1 · 100% local
+          v0.2.3 · 100% local
         </div>
       </aside>
-      <main className="flex-1 overflow-auto">
+      <main className="flex-1 overflow-y-auto h-full">
         <Outlet />
       </main>
     </div>
