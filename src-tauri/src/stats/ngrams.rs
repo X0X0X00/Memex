@@ -63,14 +63,101 @@ pub fn extract_phrase_ngrams(text: &str) -> Vec<String> {
 }
 
 fn extract_ngrams_with_range(text: &str, min_n: usize, max_n: usize) -> Vec<String> {
+    let prose = strip_code_blocks(text);
     let mut out = Vec::new();
-    for line in text.split(|c: char| c == '\n' || c == '。' || c == '！' || c == '？') {
-        if is_template_line(line) {
+    for line in prose.split(|c: char| c == '\n' || c == '。' || c == '！' || c == '？') {
+        if is_template_line(line) || is_code_like(line) {
             continue;
         }
         out.extend(extract_ngrams_line(line, min_n, max_n));
     }
     out
+}
+
+/// Remove fenced code blocks (```...```) and inline code spans (`...`) and
+/// indented-4-space code blocks. The remaining "prose" is what people actually
+/// say, vs. snippets they paste in.
+fn strip_code_blocks(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut in_fence = false;
+    for line in text.lines() {
+        let trimmed = line.trim_start();
+        if trimmed.starts_with("```") || trimmed.starts_with("~~~") {
+            in_fence = !in_fence;
+            continue;
+        }
+        if in_fence {
+            continue;
+        }
+        // 4-space-indented code blocks (markdown style)
+        if line.starts_with("    ") || line.starts_with("\t") {
+            continue;
+        }
+        // Strip inline `code` spans
+        let stripped = strip_inline_code(line);
+        out.push_str(&stripped);
+        out.push('\n');
+    }
+    out
+}
+
+fn strip_inline_code(line: &str) -> String {
+    let mut out = String::with_capacity(line.len());
+    let mut in_code = false;
+    for c in line.chars() {
+        if c == '`' {
+            in_code = !in_code;
+            continue;
+        }
+        if !in_code {
+            out.push(c);
+        }
+    }
+    out
+}
+
+/// True if a line looks like code, log, traceback, JSON, or some other
+/// non-prose paste. The heuristic combines symbol density with explicit
+/// patterns we've seen in real exports.
+fn is_code_like(line: &str) -> bool {
+    let t = line.trim();
+    if t.is_empty() {
+        return false;
+    }
+    // Common stack-trace / log / repl markers (case-insensitive).
+    static PATTERNS: Lazy<regex::Regex> = Lazy::new(|| {
+        regex::Regex::new(concat!(
+            r"(?i)",
+            r"^\s*(import |from |def |class |return |if |elif |else:|for |while |try:|except|raise |with |async |await )",
+            r"|^\s*File\s+",
+            r#""[^"]+",\s*line\s*\d+"#,
+            r"|^\s*at\s+[\w.<>]+\s*\(",
+            r"|^\s*(>>>|\.\.\.|\$ )",
+            r"|^\s*[a-zA-Z_][\w.]*\s*=\s*[\[\{]",
+            r"|^\s*[\}\]\)],?\s*$",
+            r"|\b(line|column)\s+\d+:?\s",
+            r"|\.py:\d+",
+            r"|\.(ts|js|tsx|jsx|rs|go|java|cpp|h|md):\d+",
+            r"|^\s*[A-Z][a-z]*Error:",
+            r"|^\s*Traceback\s",
+        ))
+        .unwrap()
+    });
+    if PATTERNS.is_match(t) {
+        return true;
+    }
+
+    // Symbol-density: lines dominated by punctuation/symbols (>=40% non-letter,
+    // non-space characters) are almost always code, JSON, or markup.
+    let total = t.chars().count() as f64;
+    if total < 8.0 {
+        return false;
+    }
+    let alpha_or_space = t
+        .chars()
+        .filter(|c| c.is_alphabetic() || c.is_whitespace() || (*c as u32) >= 0x4E00)
+        .count() as f64;
+    (alpha_or_space / total) < 0.6
 }
 
 fn extract_ngrams_line(text: &str, min_n: usize, max_n: usize) -> Vec<String> {
@@ -254,6 +341,61 @@ mod tests {
         assert!(is_template_line(
             "Question 1. Option A. Option B. Option C."
         ));
+    }
+
+    #[test]
+    fn code_blocks_and_tracebacks_are_stripped() {
+        // A user message with a pasted Python traceback + actual prose around it.
+        let user_msgs = vec![
+            r#"My script crashes:
+```python
+def foo(bar):
+    return bar.baz()
+```
+File "main.py", line 12, in foo
+    return bar.baz()
+AttributeError: 'NoneType' object has no attribute 'baz'
+
+I don't understand why bar is None there"#
+                .to_string(),
+            "I don't understand why my code crashes here".to_string(),
+            "I don't understand the error message".to_string(),
+        ];
+        let r = top_phrases(&user_msgs, 10);
+        let phrases: Vec<&str> = r.iter().map(|p| p.phrase.as_str()).collect();
+
+        // The actual catch-phrase should surface.
+        assert!(
+            phrases.iter().any(|p| p.contains("don't understand")),
+            "real catch-phrase missing, got {:?}",
+            phrases
+        );
+        // None of the code-block tokens should appear as phrases.
+        for token in &["py line", "main py", "attributeerror", "def foo", "return bar"] {
+            assert!(
+                !phrases.iter().any(|p| p.contains(token)),
+                "code token {:?} leaked through, got {:?}",
+                token,
+                phrases
+            );
+        }
+    }
+
+    #[test]
+    fn code_like_detector_catches_typical_lines() {
+        assert!(is_code_like(r#"File "main.py", line 12, in foo"#));
+        assert!(is_code_like("def my_function(x, y):"));
+        assert!(is_code_like("    return self.value + other"));  // indented
+        assert!(is_code_like("AttributeError: 'NoneType' has no attribute"));
+        assert!(is_code_like("at parseExpression (parser.ts:42:15)"));
+        assert!(is_code_like(">>> import foo"));
+        assert!(is_code_like("$ npm install"));
+        assert!(is_code_like("{ \"key\": [1, 2, 3], \"other\": null }"));
+
+        // Real prose should pass.
+        assert!(!is_code_like("I don't understand why this fails"));
+        assert!(!is_code_like("我不明白这个错误是什么意思"));
+        assert!(!is_code_like("Could you explain how the parser works?"));
     }
 
     #[test]

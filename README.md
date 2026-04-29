@@ -1,110 +1,161 @@
-# Memex
+<div align="center">
+  <img src="assets/logo.svg" alt="Memex" width="120" height="120"/>
 
-> Browse and analyze your AI conversation history from ChatGPT and Claude.ai — **100% local, zero network calls.**
+  <h1>Memex</h1>
 
-A Tauri desktop app that ingests your data export, renders it like a modern chat UI, and shows you stats about how you actually use AI.
+  <p><strong>Your AI conversation history, finally readable.</strong></p>
+  <p>Browse and analyze your ChatGPT, Claude.ai, and Claude Code history — <em>100% local, zero network calls.</em></p>
 
-**Status:** v0.2.0 — Phase 2 (adds Claude Code source with exact tokens + per-message cost + template-pollution filter for top phrases). Roadmap below.
+  <p>
+    <a href="https://github.com/X0X0X00/Memex/stargazers"><img src="https://img.shields.io/github/stars/X0X0X00/Memex?style=flat-square&color=f59e0b" alt="Stars"/></a>
+    <a href="https://github.com/X0X0X00/Memex/releases"><img src="https://img.shields.io/github/v/release/X0X0X00/Memex?style=flat-square&color=10b981" alt="Release"/></a>
+    <a href="LICENSE"><img src="https://img.shields.io/github/license/X0X0X00/Memex?style=flat-square&color=06b6d4" alt="License"/></a>
+    <a href="https://github.com/X0X0X00/Memex/commits/main"><img src="https://img.shields.io/github/commit-activity/m/X0X0X00/Memex?style=flat-square&color=8b5cf6" alt="Commits"/></a>
+  </p>
+
+  <p>
+    English · <a href="README_zh-CN.md">简体中文</a>
+  </p>
+</div>
 
 ---
 
 ## Why
 
-OpenAI's data export now ships as plain `conversations.json` (no more `chat.html`), and Claude.ai never had a viewer in the first place. Both leave you holding a multi-megabyte JSON blob that's effectively unreadable. Memex turns that blob back into something you can actually use.
+OpenAI's data export now ships as a plain `conversations.json` (no more `chat.html`). Claude.ai never had a viewer in the first place. Both leave you holding a multi-megabyte JSON blob that's effectively unreadable.
 
-It also answers the questions you actually want answered: *how many conversations have I had, how many tokens, what days do I chat the most, what do I keep saying?*
+Memex turns that blob back into something you can actually use — and answers the questions you actually want answered: *how many conversations, how many tokens, what days do I chat the most, what do I keep saying?*
 
 ## Features
 
-- **Three import sources:**
-  - **Claude Code** — one-click reads `~/.claude/projects/`, exact token counts and per-message model from the API response (most accurate).
-  - **ChatGPT export** — auto-detects the mapping-tree format.
-  - **Claude.ai web export** — auto-detects the `chat_messages` array format.
-- **Conversation viewer** — markdown rendering, code blocks with Shiki syntax highlighting, role-coloured bubbles, per-message token counts.
-- **Library** — searchable list with source/model badges, sort by date.
-- **Stats dashboard:**
-  - Top-line: total conversations, messages, tokens (in/out/cache split), estimated cost.
-  - 365-day activity heatmap with the busiest day called out.
-  - Hour-of-day and weekday distributions.
-  - **Top 10 phrases you keep saying** — n-gram extraction with bilingual support (English regex + Chinese jieba segmentation, stopword-filtered).
-  - **Top topics** — TF-IDF over conversation titles + first user message.
-  - Source breakdown (ChatGPT vs Claude.ai vs Claude Code) and model breakdown.
+- **🔌 Three import sources, auto-detected**
+  - **Claude Code** — one-click reads `~/.claude/projects/`. Exact token counts and per-message model from the API response — costs are real, not estimated.
+  - **ChatGPT export** — the modern mapping-tree format.
+  - **Claude.ai web export** — the `chat_messages` array format.
+- **📖 Conversation viewer** — markdown rendering, code blocks with Shiki syntax highlighting, role-coloured bubbles, per-message token counts.
+- **🔍 Library** — searchable, filterable list with source/model badges.
+- **📊 Stats dashboard**
+  - Total conversations / messages / tokens / estimated cost
+  - 365-day activity heatmap with the busiest day called out
+  - Hour-of-day and weekday distributions (in your local timezone)
+  - **Top 10 phrases you keep saying** — bilingual (English regex + Chinese jieba)
+  - **Top topics** — TF-IDF with high-frequency-term suppression
+  - Per-source and per-model breakdowns
+- **🔒 Privacy first** — Memex never makes a network request. Open-source, auditable, MIT.
+
+## Quick Start
+
+### Install
+
+**macOS** (Apple Silicon)
+
+Download `Memex_X.Y.Z_aarch64.dmg` from [Releases](https://github.com/X0X0X00/Memex/releases) → drag into Applications.
+
+The app is unsigned, so on first launch right-click → **Open** → confirm. See [docs/install.md](docs/install.md) for details.
+
+### Get your data
+
+| Source | Where |
+|---|---|
+| **Claude Code** | Already on disk at `~/.claude/projects/` — Memex reads it automatically. |
+| **ChatGPT** | chatgpt.com → Settings → Data controls → **Export**. Email + zip. |
+| **Claude.ai** | claude.ai → Settings → Privacy → **Export**. Email + zip. |
+
+### Use
+
+1. Open Memex.
+2. Go to **Import**, click **Import Claude Code** or **Choose folder** for a web export.
+3. Browse in **Library**, see your stats in **Stats**.
 
 ## Privacy
 
-- 100% local — Memex makes **zero network requests**. Your data never leaves your machine.
-- Stored in a single SQLite file inside the OS app data dir.
-- Open source — auditable end-to-end. Build from source if you want to verify.
+Memex makes **zero network requests**. Period.
 
-## Install
+- Imports parse files local to your machine.
+- All data lives in a single SQLite file in your OS app-data directory.
+- No telemetry, no analytics, no auto-update phone-home.
+- Open source — audit the code or build from source if you want to verify.
 
-See [docs/install.md](docs/install.md) for platform-specific instructions and how to bypass first-launch warnings (Memex is unsigned for v0.1).
+This is a hard line, not a marketing claim. The code has no `reqwest`, no `fetch()`, no IPC sockets to a server.
 
-Currently shipping macOS Apple Silicon as a `.zip` of the `.app` bundle (DMG packaging hits a known Tauri bug with paths containing spaces). Windows / Intel Mac / Linux builds in v0.2.
+## Stats Preview
 
-## How to use
+```
+CONVERSATIONS    MESSAGES         TOKENS              ESTIMATED COST
+221              1,758            665,392             $8.47
+2025-09 → 2026-04                 in 125k · out 540k  API-equivalent
 
-1. Get your data:
-   - **ChatGPT:** chatgpt.com → Settings → Data controls → Export. Email + zip.
-   - **Claude.ai:** claude.ai → Settings → Privacy → Export. Email + zip.
-2. Unzip somewhere.
-3. Open Memex → Import → pick the unzipped folder.
-4. Browse in the Library, see your stats in the Stats tab.
+Activity ──────────────────────────────────────────────────────────
+Busiest day: 2025-11-14 (175 messages). Peak hour: 16:00 (160 msgs).
+[365-day heatmap]
+
+Top 10 things you keep saying          Top topics
+1.  doesn't work                       1.  rust ownership
+2.  我不明白                            2.  python decorators
+3.  fix this                           3.  tauri commands
+...                                     ...
+```
 
 ## Develop
+
+Requires Node 20+, Rust stable (`rustup default stable`), and Xcode CLT on macOS.
 
 ```sh
 git clone git@github.com:X0X0X00/Memex.git
 cd Memex
 npm install
 npm run tauri dev      # dev (hot reload)
-npm run tauri build    # release bundle
+npm run tauri build    # release bundle (.dmg on macOS)
 ```
-
-Requirements: Node 20+, Rust stable (`rustup default stable`), Xcode CLT on macOS.
 
 ### Project layout
 
 ```
 Memex/
-├── src/                       # React frontend
-│   ├── pages/                 # Onboarding, Library, Conversation, Stats
-│   ├── components/            # Markdown viewer, charts, cards
-│   ├── lib/                   # api.ts (typed Tauri commands), format.ts
-│   └── types.ts               # mirrors Rust schema
-├── src-tauri/src/             # Rust backend
-│   ├── schema.rs              # Conversation / Message / Source / Role
-│   ├── db.rs                  # SQLite + helpers
+├── src/                    # React frontend
+│   ├── pages/              # Onboarding, Library, Conversation, Stats
+│   ├── components/         # Markdown viewer, charts, cards
+│   └── lib/                # Typed Tauri commands, formatters
+├── src-tauri/src/          # Rust backend
+│   ├── schema.rs           # Conversation / Message / Source / Role
+│   ├── db.rs               # SQLite schema + queries
 │   ├── parser/
-│   │   ├── openai.rs          # ChatGPT mapping-tree parser
-│   │   ├── claude_web.rs      # Claude.ai chat_messages parser
-│   │   └── tokens.rs          # tiktoken wrapper
+│   │   ├── openai.rs       # ChatGPT mapping-tree
+│   │   ├── claude_web.rs   # Claude.ai chat_messages
+│   │   ├── claude_code.rs  # Claude Code .jsonl
+│   │   └── tokens.rs       # tiktoken wrapper
 │   ├── stats/
-│   │   ├── activity.rs        # heatmap, busiest day
-│   │   ├── ngrams.rs          # top phrases (EN + jieba ZH)
-│   │   ├── topics.rs          # TF-IDF
-│   │   └── cost.rs            # model→price table
-│   └── commands.rs            # Tauri command surface
-└── docs/superpowers/
-    ├── specs/                 # design docs
-    └── plans/                 # implementation plans
+│   │   ├── activity.rs     # heatmap, busiest day (local TZ)
+│   │   ├── ngrams.rs       # top phrases (EN + jieba ZH, code-block stripped)
+│   │   ├── topics.rs       # TF-IDF (DF cap, sublinear TF)
+│   │   └── cost.rs         # model→price table
+│   └── commands.rs         # Tauri command surface
+└── docs/superpowers/       # design specs + implementation plans
 ```
 
-### Architecture in one paragraph
+### Architecture
 
-Rust backend parses exports into a unified `(Conversation, Vec<Message>)` schema, persists to SQLite, and exposes Tauri commands (`import_export`, `list_conversations`, `get_conversation`, `get_stats`). React frontend reads via `invoke()`, renders with Tailwind + shadcn primitives. All processing happens in-process; no separate service.
+Rust backend parses exports into a unified `(Conversation, Vec<Message>)` schema, persists to SQLite, exposes Tauri commands (`import_export`, `import_claude_code`, `list_conversations`, `get_conversation`, `get_stats`). React frontend reads via `invoke()`, renders with Tailwind + shadcn primitives. All processing happens in-process; no separate service.
 
 ## Roadmap
 
-- **v0.1** ✅ Phase 1 — ChatGPT + Claude.ai web exports + stats.
-- **v0.2** ✅ Phase 2 — Claude Code source with exact tokens, per-message cost, template-pollution filter. [Plan](docs/superpowers/plans/2026-04-29-memex-phase-2-claude-code-source.md).
-- **v0.3** — Tantivy full-text search across all messages, "Export Report" → static HTML.
-- **v0.4** — Code signing, GitHub Releases auto-publish, Win + Linux + Intel Mac builds, auto-updater.
+- ✅ **v0.1** — ChatGPT + Claude.ai web exports + stats.
+- ✅ **v0.2** — Claude Code source with exact tokens, per-message cost.
+- ✅ **v0.2.1** — Top-phrase / topic noise filtering.
+- ✅ **v0.2.2** — Local-timezone activity, code-block stripping in n-grams.
+- 🔜 **v0.3** — Tantivy full-text search across all messages, "Export Report" → static HTML, optional LLM-powered topic analysis (BYO API key or local Ollama).
+- 🔜 **v0.4** — Code signing, GitHub Releases auto-publish, Win + Linux + Intel Mac builds, auto-updater.
+
+## Contributing
+
+PRs welcome — issues, bug reports, format support for other AI tools (Gemini export? Cursor? Cline?). Please run `cargo test` and `npm run build` before opening a PR.
 
 ## License
 
-MIT
+MIT. Use it, fork it, ship it.
 
 ## Acknowledgements
 
-Built on [Tauri 2](https://tauri.app), [React](https://react.dev), [tiktoken-rs](https://github.com/zurawiki/tiktoken-rs), [jieba-rs](https://github.com/messense/jieba-rs), [Recharts](https://recharts.org), [Shiki](https://shiki.matsu.io). Memex (the name) is a tribute to Vannevar Bush's 1945 essay [*As We May Think*](https://www.theatlantic.com/magazine/archive/1945/07/as-we-may-think/303881/).
+Built on [Tauri 2](https://tauri.app), [React](https://react.dev), [tiktoken-rs](https://github.com/zurawiki/tiktoken-rs), [jieba-rs](https://github.com/messense/jieba-rs), [Recharts](https://recharts.org), [Shiki](https://shiki.style).
+
+The name *Memex* is a tribute to Vannevar Bush's 1945 essay [*As We May Think*](https://www.theatlantic.com/magazine/archive/1945/07/as-we-may-think/303881/), which imagined a personal device for storing and cross-linking everything you've ever read. This is a tiny step in that direction.

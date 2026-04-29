@@ -1,5 +1,5 @@
 use crate::error::AppResult;
-use chrono::{DateTime, Datelike, Timelike, Utc};
+use chrono::{DateTime, Datelike, Local, Timelike, Utc};
 use rusqlite::Connection;
 use serde::Serialize;
 use std::collections::HashMap;
@@ -28,7 +28,11 @@ pub fn compute(conn: &Connection) -> AppResult<ActivityReport> {
     let rows = stmt.query_map([], |row| row.get::<_, i64>(0))?;
     for ts in rows {
         let ts = ts?;
-        let dt = DateTime::<Utc>::from_timestamp(ts, 0).unwrap_or_else(Utc::now);
+        // Convert UTC timestamp to the user's local timezone before extracting
+        // hour/weekday — otherwise "By hour of day" lies (peak at 16:00 UTC
+        // looked like late afternoon in any TZ but was actually noon EDT).
+        let utc = DateTime::<Utc>::from_timestamp(ts, 0).unwrap_or_else(Utc::now);
+        let dt = utc.with_timezone(&Local);
         let day = dt.format("%Y-%m-%d").to_string();
         *by_day.entry(day).or_insert(0) += 1;
         by_hour[dt.hour() as usize] += 1;
