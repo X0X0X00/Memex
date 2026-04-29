@@ -156,7 +156,9 @@ Rust backend parses exports into a unified `(Conversation, Vec<Message>)` schema
 - ✅ **v0.2.1** — Top-phrase / topic noise filtering.
 - ✅ **v0.2.2** — Local-timezone activity chart, code-block stripping in n-grams, bilingual README + logo.
 - ✅ **v0.2.3** — Sticky sidebar, paused phrases/topics UI, smart breakdown collapse.
-- 🔜 **v0.3** — Tantivy full-text search across all messages, "Export Report" → static HTML, optional LLM-powered topic & catch-phrase analysis (bring-your-own API key or local Ollama).
+- ✅ **v0.3.0** — Stats expansion: cost-over-time chart, per-project breakdown, tool-usage bars, message-length histogram. Accurate per-tool counts via new `tool_calls` schema.
+- 🔜 **v0.3.1** — Tantivy full-text search across all messages.
+- 🔜 **v0.3.2** — Export Report → static HTML.
 - 🔜 **v0.4** — Code signing, GitHub Releases auto-publish, Win + Linux + Intel Mac builds, auto-updater.
 
 ## Contributing

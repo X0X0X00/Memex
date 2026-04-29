@@ -156,7 +156,9 @@ Rust 后端把导出文件解析成统一 schema `(Conversation, Vec<Message>)`�
 - ✅ **v0.2.1** —— Top phrase / topic 噪声过滤。
 - ✅ **v0.2.2** —— 本地时区活动图、n-gram 剔除粘贴代码、双语 README + logo。
 - ✅ **v0.2.3** —— 侧边栏固定、phrases/topics UI 暂停、按源/模型分组智能折叠。
-- 🔜 **v0.3** —— Tantivy 全文搜索、"Export Report" → 静态 HTML、可选用 LLM 做话题与口头禅分析（自带 API key 或本地 Ollama）。
+- ✅ **v0.3.0** —— Stats 扩展：成本时间曲线、按项目分组、工具使用条形图、消息长度直方图。新增 `tool_calls` 表保证工具计数准确。
+- 🔜 **v0.3.1** —— Tantivy 全文搜索。
+- 🔜 **v0.3.2** —— Export Report 导出静态 HTML。
 - 🔜 **v0.4** —— 代码签名、GitHub Releases 自动发布、Windows / Linux / Intel Mac 包、自动更新。
 
 ## 贡献
