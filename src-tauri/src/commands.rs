@@ -295,11 +295,21 @@ fn do_import_cc(
     let tx = conn.transaction()?;
     let mut convs = 0u32;
     let mut msgs = 0u32;
-    for (c, ms) in parsed {
+    for (c, ms, tcs) in parsed {
         db::upsert_conversation(&tx, &c)?;
         for (i, m) in ms.iter().enumerate() {
             db::insert_message(&tx, i as u32, m)?;
             msgs += 1;
+        }
+        for tc in tcs {
+            db::insert_tool_call(
+                &tx,
+                &tc.id,
+                &tc.message_id,
+                &tc.conversation_id,
+                &tc.tool_name,
+                tc.seq,
+            )?;
         }
         convs += 1;
     }

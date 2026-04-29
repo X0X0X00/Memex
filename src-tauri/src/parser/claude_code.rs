@@ -14,16 +14,38 @@ use crate::error::{AppError, AppResult};
 use crate::schema::*;
 use crate::stats::cost::estimate_cost_usd;
 use chrono::DateTime;
+use serde::Serialize;
 use std::path::{Path, PathBuf};
+
+/// One tool_use block extracted from an assistant message. Persisted as
+/// a row in the `tool_calls` table during import.
+#[derive(Debug, Clone, Serialize)]
+pub struct ToolCall {
+    pub id: String,                 // "<conv_id>:<msg_uuid>:<tool_use_id>"
+    pub message_id: String,         // "<conv_id>:<msg_uuid>"
+    pub conversation_id: String,    // "claude_code:<session_id>"
+    pub tool_name: String,
+    pub seq: u32,
+}
+
+#[derive(Debug, Clone)]
+struct RawToolCall {
+    tool_use_id: String,
+    tool_name: String,
+}
 
 /// Parse one .jsonl session file. Returns `None` if no usable user/assistant
 /// turns were found (e.g. an empty session, or a file that's all metadata).
-pub fn parse_session_file(path: impl AsRef<Path>) -> AppResult<Option<(Conversation, Vec<Message>)>> {
+pub fn parse_session_file(
+    path: impl AsRef<Path>,
+) -> AppResult<Option<(Conversation, Vec<Message>, Vec<ToolCall>)>> {
     let raw = std::fs::read_to_string(&path)?;
     parse_session_str(&raw)
 }
 
-pub fn parse_session_str(raw: &str) -> AppResult<Option<(Conversation, Vec<Message>)>> {
+pub fn parse_session_str(
+    raw: &str,
+) -> AppResult<Option<(Conversation, Vec<Message>, Vec<ToolCall>)>> {
     let mut custom_title: Option<String> = None;
     let mut session_id: Option<String> = None;
     let mut cwd: Option<String> = None;
@@ -32,6 +54,11 @@ pub fn parse_session_str(raw: &str) -> AppResult<Option<(Conversation, Vec<Messa
     let mut last_ts: Option<i64> = None;
     let mut messages: Vec<Message> = Vec::new();
     let mut totals = TokenCounts::zero();
+    // Parallel buffer: (raw uuid, raw tool list) per assistant message that had tools.
+    // We can't build final ToolCall until we know the conv_id (which we set after
+    // walking the file, since custom-title may come first or sessionId may appear
+    // on a later line).
+    let mut pending_tool_calls: Vec<(String, Vec<RawToolCall>)> = Vec::new();
 
     for (i, line) in raw.lines().enumerate() {
         if line.trim().is_empty() {
@@ -75,7 +102,7 @@ pub fn parse_session_str(raw: &str) -> AppResult<Option<(Conversation, Vec<Messa
                 }
             }
             "assistant" => {
-                if let Some((m, usage)) = build_assistant_message(&v) {
+                if let Some((m, usage, raw_tools)) = build_assistant_message(&v) {
                     if first_ts.is_none() {
                         first_ts = m.timestamp;
                     }
@@ -95,6 +122,9 @@ pub fn parse_session_str(raw: &str) -> AppResult<Option<(Conversation, Vec<Messa
                     totals.output += usage.output;
                     totals.cache_read += usage.cache_read;
                     totals.cache_write += usage.cache_write;
+                    if !raw_tools.is_empty() {
+                        pending_tool_calls.push((m.id.clone(), raw_tools));
+                    }
                     messages.push(m);
                 }
             }
@@ -138,6 +168,21 @@ pub fn parse_session_str(raw: &str) -> AppResult<Option<(Conversation, Vec<Messa
         .filter(|s| !s.trim().is_empty())
         .unwrap_or_else(|| "(untitled)".into());
 
+    // Build the final ToolCall list now that conv_id is known.
+    let mut tool_calls: Vec<ToolCall> = Vec::new();
+    for (raw_msg_uuid, raw_tools) in pending_tool_calls {
+        let stamped_msg_id = format!("{conv_id}:{raw_msg_uuid}");
+        for (i, t) in raw_tools.into_iter().enumerate() {
+            tool_calls.push(ToolCall {
+                id: format!("{stamped_msg_id}:{}", t.tool_use_id),
+                message_id: stamped_msg_id.clone(),
+                conversation_id: conv_id.clone(),
+                tool_name: t.tool_name,
+                seq: i as u32,
+            });
+        }
+    }
+
     Ok(Some((
         Conversation {
             id: conv_id,
@@ -153,6 +198,7 @@ pub fn parse_session_str(raw: &str) -> AppResult<Option<(Conversation, Vec<Messa
             estimated_cost_usd,
         },
         messages,
+        tool_calls,
     )))
 }
 
@@ -183,7 +229,9 @@ fn build_user_message(v: &serde_json::Value) -> Option<Message> {
     })
 }
 
-fn build_assistant_message(v: &serde_json::Value) -> Option<(Message, Usage)> {
+fn build_assistant_message(
+    v: &serde_json::Value,
+) -> Option<(Message, Usage, Vec<RawToolCall>)> {
     let uuid = v.get("uuid").and_then(|s| s.as_str())?.to_string();
     let ts = v.get("timestamp").and_then(|s| s.as_str()).and_then(parse_iso);
     let model = v
@@ -191,8 +239,8 @@ fn build_assistant_message(v: &serde_json::Value) -> Option<(Message, Usage)> {
         .and_then(|m| m.as_str())
         .map(String::from);
     let content_v = v.pointer("/message/content")?;
-    let (content, tool_name) = extract_assistant_content(content_v);
-    if content.is_empty() && tool_name.is_none() {
+    let (content, raw_tools) = extract_assistant_content(content_v);
+    if content.is_empty() && raw_tools.is_empty() {
         return None;
     }
 
@@ -221,6 +269,8 @@ fn build_assistant_message(v: &serde_json::Value) -> Option<(Message, Usage)> {
         cache_read: u.cache_read,
         cache_write: u.cache_write,
     };
+    // Primary tool name for the conversation viewer's role line is the first one.
+    let primary_tool = raw_tools.first().map(|t| t.tool_name.clone());
     Some((
         Message {
             id: uuid,
@@ -230,9 +280,10 @@ fn build_assistant_message(v: &serde_json::Value) -> Option<(Message, Usage)> {
             timestamp: ts,
             model,
             tokens: Some(tokens),
-            tool_name,
+            tool_name: primary_tool,
         },
         u,
+        raw_tools,
     ))
 }
 
@@ -261,13 +312,13 @@ fn extract_user_content(v: &serde_json::Value) -> String {
     parts.join("\n\n")
 }
 
-fn extract_assistant_content(v: &serde_json::Value) -> (String, Option<String>) {
+fn extract_assistant_content(v: &serde_json::Value) -> (String, Vec<RawToolCall>) {
     let arr = match v.as_array() {
         Some(a) => a,
-        None => return (String::new(), None),
+        None => return (String::new(), Vec::new()),
     };
     let mut texts: Vec<String> = Vec::new();
-    let mut first_tool: Option<String> = None;
+    let mut tools: Vec<RawToolCall> = Vec::new();
     for b in arr {
         let ty = b.get("type").and_then(|t| t.as_str()).unwrap_or("");
         match ty {
@@ -282,16 +333,26 @@ fn extract_assistant_content(v: &serde_json::Value) -> (String, Option<String>) 
                 }
             }
             "tool_use" => {
-                let name = b.get("name").and_then(|s| s.as_str()).unwrap_or("tool");
-                if first_tool.is_none() {
-                    first_tool = Some(name.to_string());
-                }
+                let name = b
+                    .get("name")
+                    .and_then(|s| s.as_str())
+                    .unwrap_or("tool")
+                    .to_string();
+                let tu_id = b
+                    .get("id")
+                    .and_then(|s| s.as_str())
+                    .map(String::from)
+                    .unwrap_or_else(|| format!("anon-{}", tools.len()));
+                tools.push(RawToolCall {
+                    tool_use_id: tu_id,
+                    tool_name: name.clone(),
+                });
                 texts.push(format!("[tool_use: {}]", name));
             }
             _ => {}
         }
     }
-    (texts.join("\n\n"), first_tool)
+    (texts.join("\n\n"), tools)
 }
 
 fn flatten_inner_content(v: &serde_json::Value) -> String {
@@ -331,7 +392,9 @@ fn is_command_echo(s: &str) -> bool {
         || trimmed.starts_with("[tool_result]")
 }
 
-pub fn parse_projects_dir(root: &Path) -> AppResult<Vec<(Conversation, Vec<Message>)>> {
+pub fn parse_projects_dir(
+    root: &Path,
+) -> AppResult<Vec<(Conversation, Vec<Message>, Vec<ToolCall>)>> {
     let mut out = Vec::new();
     walk_jsonl(root, &mut |p| {
         if let Ok(Some(item)) = parse_session_file(p) {

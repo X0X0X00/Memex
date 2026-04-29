@@ -85,7 +85,7 @@ fn claude_web_token_counts_populated() {
 fn claude_code_minimal_parses() {
     let path = "tests/fixtures/claude_code_minimal.jsonl";
     let result = claude_code::parse_session_file(path).unwrap();
-    let (conv, msgs) = result.expect("session should produce a conversation");
+    let (conv, msgs, _tool_calls) = result.expect("session should produce a conversation");
 
     assert_eq!(conv.source, Source::ClaudeCode);
     assert_eq!(conv.native_id, "s1");
@@ -115,6 +115,29 @@ fn claude_code_minimal_parses() {
         assert_eq!(m.conversation_id, conv.id);
         assert!(m.id.starts_with(&conv.id));
     }
+}
+
+#[test]
+fn claude_code_extracts_all_tool_uses() {
+    let path = "tests/fixtures/claude_code_minimal.jsonl";
+    let result = claude_code::parse_session_file(path).unwrap();
+    let (_conv, msgs, tool_calls) = result.expect("should parse");
+
+    let a2 = msgs
+        .iter()
+        .find(|m| m.role == Role::Assistant && m.content.contains("Done."))
+        .expect("a2 not found");
+    // Primary tool_name on the Message remains Bash (first one).
+    assert_eq!(a2.tool_name.as_deref(), Some("Bash"));
+
+    // The new ToolCall list exposes BOTH tool_use blocks for that message.
+    let for_a2: Vec<&claude_code::ToolCall> = tool_calls
+        .iter()
+        .filter(|t| t.message_id == a2.id)
+        .collect();
+    assert_eq!(for_a2.len(), 2);
+    assert_eq!(for_a2[0].tool_name, "Bash");
+    assert_eq!(for_a2[1].tool_name, "Read");
 }
 
 #[test]
