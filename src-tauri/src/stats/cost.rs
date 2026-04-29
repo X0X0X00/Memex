@@ -29,21 +29,48 @@ pub fn price_for(model: &str) -> Option<ModelPrice> {
         // Generic fallback for unknown Claude family — assume Sonnet pricing.
         return Some(ModelPrice { input: 3.0, output: 15.0, cache_read: 0.3, cache_write: 3.75 });
     }
-    // OpenAI
+    // OpenAI: GPT-5 family (Aug 2025+, ChatGPT app slugs include gpt-5, gpt-5-2, gpt-5-thinking, etc.)
+    if m.starts_with("gpt-5-thinking") || m.starts_with("gpt-5-pro") {
+        // Reasoning variants billed higher
+        return Some(ModelPrice { input: 5.0, output: 40.0, cache_read: 0.5, cache_write: 0.0 });
+    }
+    if m.starts_with("gpt-5-mini") || m.starts_with("gpt-5-nano") {
+        return Some(ModelPrice { input: 0.25, output: 2.0, cache_read: 0.025, cache_write: 0.0 });
+    }
+    if m.starts_with("gpt-5") {
+        // Standard GPT-5
+        return Some(ModelPrice { input: 1.25, output: 10.0, cache_read: 0.125, cache_write: 0.0 });
+    }
+    // OpenAI: GPT-4 family
     if m.starts_with("gpt-4o-mini") {
         return Some(ModelPrice { input: 0.15, output: 0.6, cache_read: 0.075, cache_write: 0.0 });
     }
     if m.starts_with("gpt-4o") || m == "gpt-4-turbo" {
         return Some(ModelPrice { input: 2.5, output: 10.0, cache_read: 1.25, cache_write: 0.0 });
     }
+    if m.starts_with("gpt-4-gizmo") {
+        // Custom GPTs run on the underlying GPT-4 model — price like gpt-4o.
+        return Some(ModelPrice { input: 2.5, output: 10.0, cache_read: 1.25, cache_write: 0.0 });
+    }
     if m.starts_with("gpt-4") {
         return Some(ModelPrice { input: 30.0, output: 60.0, cache_read: 0.0, cache_write: 0.0 });
     }
-    if m.starts_with("gpt-3.5") {
+    if m.starts_with("gpt-3.5") || m.starts_with("text-davinci") {
         return Some(ModelPrice { input: 0.5, output: 1.5, cache_read: 0.0, cache_write: 0.0 });
+    }
+    // o-series reasoning models
+    if m.starts_with("o3-mini") {
+        return Some(ModelPrice { input: 1.1, output: 4.4, cache_read: 0.55, cache_write: 0.0 });
+    }
+    if m.starts_with("o1-mini") {
+        return Some(ModelPrice { input: 1.1, output: 4.4, cache_read: 0.55, cache_write: 0.0 });
     }
     if m.starts_with("o1") || m.starts_with("o3") {
         return Some(ModelPrice { input: 15.0, output: 60.0, cache_read: 7.5, cache_write: 0.0 });
+    }
+    // Generic GPT fallback — assume gpt-4o for unknown OpenAI models
+    if m.starts_with("gpt") {
+        return Some(ModelPrice { input: 2.5, output: 10.0, cache_read: 1.25, cache_write: 0.0 });
     }
     None
 }

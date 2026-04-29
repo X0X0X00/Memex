@@ -48,11 +48,13 @@ pub fn model_group(model: &str) -> &'static str {
         "Claude Haiku"
     } else if m.starts_with("claude") {
         "Claude (other)"
-    } else if m.starts_with("gpt-4o") {
+    } else if m.starts_with("gpt-5") {
+        "GPT-5"
+    } else if m.starts_with("gpt-4o") || m.starts_with("gpt-4-gizmo") {
         "GPT-4o"
     } else if m.starts_with("gpt-4") {
         "GPT-4"
-    } else if m.starts_with("gpt-3.5") {
+    } else if m.starts_with("gpt-3.5") || m.starts_with("text-davinci") {
         "GPT-3.5"
     } else if m.starts_with("o1") || m.starts_with("o3") {
         "o-series"

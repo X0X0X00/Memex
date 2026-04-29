@@ -123,8 +123,15 @@ fn build_one(r: RawConv) -> AppResult<Option<(Conversation, Vec<Message>)>> {
             totals.cache_read += t.cache_read;
             totals.cache_write += t.cache_write;
             // Per-message cost: prefer the message's own model, then the
-            // conversation-level fallback (last assistant model or default_model_slug).
-            let m_model = m.model.as_deref().or(model.as_deref()).unwrap_or("");
+            // conversation-level fallback (last assistant model or
+            // default_model_slug). If still nothing, fall back to "gpt-4o" —
+            // a sane mid-2024+ default that prevents pre-export ChatGPT
+            // messages (where model_slug is missing) from being free.
+            let m_model = m
+                .model
+                .as_deref()
+                .or(model.as_deref())
+                .unwrap_or("gpt-4o");
             estimated_cost_usd += estimate_cost_usd(m_model, t);
         }
     }
