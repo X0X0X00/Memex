@@ -7,10 +7,11 @@
   <p>Browse and analyze your ChatGPT, Claude.ai, and Claude Code history — <em>100% local, zero network calls.</em></p>
 
   <p>
-    <a href="https://github.com/X0X0X00/Memex/stargazers"><img src="https://img.shields.io/github/stars/X0X0X00/Memex?style=flat-square&color=f59e0b" alt="Stars"/></a>
-    <a href="https://github.com/X0X0X00/Memex/releases"><img src="https://img.shields.io/github/v/release/X0X0X00/Memex?style=flat-square&color=10b981" alt="Release"/></a>
-    <a href="LICENSE"><img src="https://img.shields.io/github/license/X0X0X00/Memex?style=flat-square&color=06b6d4" alt="License"/></a>
-    <a href="https://github.com/X0X0X00/Memex/commits/main"><img src="https://img.shields.io/github/commit-activity/m/X0X0X00/Memex?style=flat-square&color=8b5cf6" alt="Commits"/></a>
+    <a href="https://github.com/X0X0X00/Memex/stargazers"><img src="https://img.shields.io/github/stars/X0X0X00/Memex?style=flat-square&logo=github&color=f59e0b&labelColor=0b1220" alt="Stars"/></a>
+    <a href="https://github.com/X0X0X00/Memex/releases"><img src="https://img.shields.io/github/v/tag/X0X0X00/Memex?sort=semver&style=flat-square&label=release&color=10b981&labelColor=0b1220" alt="Release"/></a>
+    <a href="LICENSE"><img src="https://img.shields.io/github/license/X0X0X00/Memex?style=flat-square&color=06b6d4&labelColor=0b1220" alt="License"/></a>
+    <a href="https://github.com/X0X0X00/Memex/commits/main"><img src="https://img.shields.io/github/commit-activity/m/X0X0X00/Memex?style=flat-square&color=8b5cf6&label=commits&labelColor=0b1220" alt="Commits"/></a>
+    <a href="https://tauri.app"><img src="https://img.shields.io/badge/built_with-Tauri_2-24c8db?style=flat-square&logo=tauri&logoColor=white&labelColor=0b1220" alt="Built with Tauri"/></a>
   </p>
 
   <p>
