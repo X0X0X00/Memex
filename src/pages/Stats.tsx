@@ -8,6 +8,8 @@ import { CostOverTimeChart } from "@/components/CostOverTimeChart"
 import { ProjectTable } from "@/components/ProjectTable"
 import { ToolUsageBars } from "@/components/ToolUsageBars"
 import { LengthHistogram } from "@/components/LengthHistogram"
+import { ExportPosterDialog } from "@/components/ExportPosterDialog"
+import { Button } from "@/components/ui/button"
 import { fmtDate, fmtNum, fmtUsd, sourceLabel } from "@/lib/format"
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
@@ -18,6 +20,7 @@ const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
 export default function Stats() {
   const [s, setS] = useState<StatsReport | null>(null)
   const [loading, setLoading] = useState(true)
+  const [exportOpen, setExportOpen] = useState(false)
 
   useEffect(() => {
     api.getStats().then(setS).finally(() => setLoading(false))
@@ -51,7 +54,12 @@ export default function Stats() {
 
   return (
     <div className="p-8 space-y-10 max-w-6xl pb-20">
-      <h2 className="text-2xl font-semibold tracking-tight">Stats</h2>
+      <div className="flex items-baseline justify-between flex-wrap gap-3">
+        <h2 className="text-2xl font-semibold tracking-tight">Stats</h2>
+        <Button variant="secondary" size="sm" onClick={() => setExportOpen(true)}>
+          Export poster
+        </Button>
+      </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <StatCard label="Conversations" value={fmtNum(s.total_conversations)} sub={span} />
@@ -177,6 +185,12 @@ export default function Stats() {
           panel is paused until the LLM path lands.
         </p>
       </section>
+
+      <ExportPosterDialog
+        stats={s}
+        open={exportOpen}
+        onClose={() => setExportOpen(false)}
+      />
     </div>
   )
 }
