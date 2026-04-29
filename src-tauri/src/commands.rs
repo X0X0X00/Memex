@@ -183,6 +183,10 @@ pub struct StatsReport {
     pub top_topics: Vec<PhraseStat>,
     pub by_model: Vec<(String, i64)>,
     pub by_source: Vec<(String, i64)>,
+    pub cost_over_time: crate::stats::cost_over_time::CostSeries,
+    pub by_project: Vec<crate::stats::projects::ProjectRow>,
+    pub tool_usage: Vec<(String, i64)>,
+    pub message_length: Vec<crate::stats::length_dist::LengthBucket>,
 }
 
 #[tauri::command]
@@ -239,6 +243,11 @@ fn do_stats(state: &tauri::State<AppState>) -> AppResult<StatsReport> {
         }
     }
 
+    let cost_over_time = crate::stats::cost_over_time::compute(&conn)?;
+    let by_project = crate::stats::projects::compute(&conn)?;
+    let tool_usage = crate::stats::tool_usage::compute(&conn, 20)?;
+    let message_length = crate::stats::length_dist::compute(&conn)?;
+
     Ok(StatsReport {
         total_conversations,
         total_messages,
@@ -256,6 +265,10 @@ fn do_stats(state: &tauri::State<AppState>) -> AppResult<StatsReport> {
         top_topics,
         by_model,
         by_source,
+        cost_over_time,
+        by_project,
+        tool_usage,
+        message_length,
     })
 }
 

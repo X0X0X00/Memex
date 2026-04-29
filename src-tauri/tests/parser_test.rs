@@ -118,6 +118,73 @@ fn claude_code_minimal_parses() {
 }
 
 #[test]
+fn get_stats_includes_new_sections() {
+    use memex_lib::db;
+    use memex_lib::schema::*;
+
+    let conn = db::open_in_memory().unwrap();
+    db::upsert_conversation(
+        &conn,
+        &Conversation {
+            id: "c1".into(),
+            source: Source::ClaudeCode,
+            native_id: "x".into(),
+            title: "t".into(),
+            created_at: 1700000000,
+            updated_at: 1700000100,
+            model: Some("claude-sonnet-4-6".into()),
+            project: Some("/tmp/proj".into()),
+            message_count: 1,
+            tokens: TokenCounts {
+                input: 1_000_000,
+                output: 1_000_000,
+                cache_read: 0,
+                cache_write: 0,
+            },
+            estimated_cost_usd: 18.0,
+        },
+    )
+    .unwrap();
+    db::insert_message(
+        &conn,
+        0,
+        &Message {
+            id: "m1".into(),
+            conversation_id: "c1".into(),
+            role: Role::User,
+            content: "hello".into(),
+            timestamp: Some(1700000000),
+            model: Some("claude-sonnet-4-6".into()),
+            tokens: Some(TokenCounts {
+                input: 100,
+                output: 0,
+                cache_read: 0,
+                cache_write: 0,
+            }),
+            tool_name: None,
+        },
+    )
+    .unwrap();
+    db::insert_tool_call(&conn, "m1:t0", "m1", "c1", "Bash", 0).unwrap();
+
+    // Spot-check each new aggregation is reachable via its public compute().
+    let cot = memex_lib::stats::cost_over_time::compute(&conn).unwrap();
+    assert!(!cot.points.is_empty(), "cost-over-time should have data");
+
+    let proj = memex_lib::stats::projects::compute(&conn).unwrap();
+    assert_eq!(proj.len(), 1);
+    assert_eq!(proj[0].display_name, "proj");
+
+    let tools = memex_lib::stats::tool_usage::compute(&conn, 10).unwrap();
+    assert_eq!(tools, vec![("Bash".to_string(), 1)]);
+
+    let lengths = memex_lib::stats::length_dist::compute(&conn).unwrap();
+    let by: std::collections::HashMap<&str, i64> =
+        lengths.iter().map(|b| (b.label.as_str(), b.n)).collect();
+    assert_eq!(by["50-200"], 1);
+}
+
+#[test]
 fn claude_code_extracts_all_tool_uses() {
     let path = "tests/fixtures/claude_code_minimal.jsonl";
     let result = claude_code::parse_session_file(path).unwrap();
