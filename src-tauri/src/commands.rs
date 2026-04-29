@@ -30,18 +30,46 @@ pub fn import_export(folder: String, state: tauri::State<AppState>) -> Result<Im
 
 fn do_import(folder: String, state: &tauri::State<AppState>) -> AppResult<ImportSummary> {
     let folder = PathBuf::from(&folder);
-    let path = if folder.is_file() {
-        folder.clone()
+    let paths = if folder.is_file() {
+        vec![folder.clone()]
     } else {
-        find_conversations_json(&folder)?
+        find_conversations_files(&folder)?
     };
-    let json = std::fs::read_to_string(&path)?;
-    let (fmt, parsed) = parse_auto(&json)?;
+    if paths.is_empty() {
+        return Err(crate::error::AppError::Parse(format!(
+            "no conversations.json (or conversations-NNN.json) found in {}",
+            folder.display()
+        )));
+    }
+
+    // Parse every chunk; merge into one parse result. All chunks must share the
+    // same detected format (catches a mistakenly mixed folder).
+    let mut detected_fmt: Option<DetectedFormat> = None;
+    let mut all_parsed: Vec<_> = Vec::new();
+    for p in &paths {
+        let json = std::fs::read_to_string(p)?;
+        let (fmt, parsed) = parse_auto(&json)?;
+        match detected_fmt {
+            None => detected_fmt = Some(fmt),
+            Some(prev) if prev == fmt => {}
+            Some(prev) => {
+                return Err(crate::error::AppError::Parse(format!(
+                    "mixed export formats in folder ({:?} vs {:?} at {})",
+                    prev,
+                    fmt,
+                    p.display()
+                )));
+            }
+        }
+        all_parsed.extend(parsed);
+    }
+    let fmt = detected_fmt.expect("paths non-empty");
+
     let mut conn = state.db.lock().unwrap();
     let tx = conn.transaction()?;
     let mut convs = 0u32;
     let mut msgs = 0u32;
-    for (c, ms) in parsed {
+    for (c, ms) in all_parsed {
         db::upsert_conversation(&tx, &c)?;
         for (i, m) in ms.iter().enumerate() {
             db::insert_message(&tx, i as u32, m)?;
@@ -58,29 +86,87 @@ fn do_import(folder: String, state: &tauri::State<AppState>) -> AppResult<Import
     Ok(ImportSummary { conversations_added: convs, messages_added: msgs, source })
 }
 
-/// Walk the chosen folder (and one level of subfolders) looking for conversations.json.
-/// This handles ChatGPT/Claude exports where the folder the user picks contains
-/// either the file directly, or a single `data-XXX-batch-XXXX/` subfolder.
-fn find_conversations_json(folder: &std::path::Path) -> AppResult<PathBuf> {
-    let direct = folder.join("conversations.json");
-    if direct.is_file() {
-        return Ok(direct);
+/// Walk the chosen folder (and one level of subfolders) looking for the export's
+/// JSON file(s). Handles three layouts:
+///
+/// 1. Folder contains `conversations.json` directly (older ChatGPT / Claude.ai).
+/// 2. Folder contains a single `data-XXX-batch-XXXX/` subfolder with `conversations.json`.
+/// 3. Folder contains chunked `conversations-000.json` … `conversations-NNN.json`
+///    (newer ChatGPT export for large accounts), or that pattern inside a single
+///    subfolder.
+fn find_conversations_files(folder: &std::path::Path) -> AppResult<Vec<PathBuf>> {
+    if let Some(found) = scan_one_dir(folder)? {
+        return Ok(found);
     }
     if let Ok(entries) = std::fs::read_dir(folder) {
         for entry in entries.flatten() {
             let p = entry.path();
             if p.is_dir() {
-                let candidate = p.join("conversations.json");
-                if candidate.is_file() {
-                    return Ok(candidate);
+                if let Some(found) = scan_one_dir(&p)? {
+                    return Ok(found);
                 }
             }
         }
     }
-    Err(crate::error::AppError::Parse(format!(
-        "no conversations.json found in {}",
-        folder.display()
-    )))
+    Ok(Vec::new())
+}
+
+/// Look in a single directory for either `conversations.json` (preferred) or
+/// chunked `conversations-NNN.json` files. Returns None if nothing matches.
+fn scan_one_dir(dir: &std::path::Path) -> AppResult<Option<Vec<PathBuf>>> {
+    if !dir.is_dir() {
+        return Ok(None);
+    }
+    let direct = dir.join("conversations.json");
+    if direct.is_file() {
+        return Ok(Some(vec![direct]));
+    }
+    let mut chunks: Vec<PathBuf> = Vec::new();
+    for entry in std::fs::read_dir(dir)?.flatten() {
+        let p = entry.path();
+        if !p.is_file() {
+            continue;
+        }
+        if let Some(name) = p.file_name().and_then(|s| s.to_str()) {
+            if is_conversations_chunk(name) {
+                chunks.push(p);
+            }
+        }
+    }
+    if chunks.is_empty() {
+        Ok(None)
+    } else {
+        chunks.sort();
+        Ok(Some(chunks))
+    }
+}
+
+/// Match `conversations-<digits>.json` (chunked-export filename).
+fn is_conversations_chunk(name: &str) -> bool {
+    let Some(stem) = name.strip_suffix(".json") else { return false };
+    let Some(rest) = stem.strip_prefix("conversations-") else { return false };
+    !rest.is_empty() && rest.chars().all(|c| c.is_ascii_digit())
+}
+
+#[cfg(test)]
+mod test_chunked {
+    use super::is_conversations_chunk;
+
+    #[test]
+    fn matches_chunked_filenames() {
+        assert!(is_conversations_chunk("conversations-000.json"));
+        assert!(is_conversations_chunk("conversations-031.json"));
+        assert!(is_conversations_chunk("conversations-9.json"));
+    }
+
+    #[test]
+    fn rejects_non_matching_filenames() {
+        assert!(!is_conversations_chunk("conversations.json"));
+        assert!(!is_conversations_chunk("conversations-.json"));
+        assert!(!is_conversations_chunk("conversations-abc.json"));
+        assert!(!is_conversations_chunk("conv-000.json"));
+        assert!(!is_conversations_chunk("conversations-000.txt"));
+    }
 }
 
 #[derive(Serialize)]

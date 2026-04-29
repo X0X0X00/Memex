@@ -80,9 +80,10 @@ export default function Onboarding() {
       <section className="border border-border rounded-lg p-5 mb-5">
         <h3 className="text-base font-semibold mb-1">ChatGPT or Claude.ai web export</h3>
         <p className="text-muted-foreground text-sm mb-3 leading-relaxed">
-          Pick a folder containing a <code className="bg-muted px-1 py-0.5 rounded text-xs">conversations.json</code> file.
-          Memex auto-detects whether it's ChatGPT (mapping tree) or Claude.ai (chat_messages array).
-          Token counts are estimated via tiktoken — costs are approximate.
+          Pick a folder containing <code className="bg-muted px-1 py-0.5 rounded text-xs">conversations.json</code> (or
+          chunked <code className="bg-muted px-1 py-0.5 rounded text-xs">conversations-NNN.json</code> files for large
+          ChatGPT accounts). Memex auto-detects ChatGPT vs Claude.ai format.
+          Large exports take 1–2 minutes — token counts are estimated via tiktoken.
         </p>
         <Button onClick={pickFolder} disabled={busy} variant="secondary">
           {busyExport ? "Importing…" : "Choose folder"}
