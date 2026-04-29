@@ -1,6 +1,6 @@
 [package]
 name = "memex"
-version = "0.3.2"
+version = "0.3.3"
 description = "Browse and analyze your AI conversation history. Local-only."
 authors = ["zzh"]
 edition = "2021"

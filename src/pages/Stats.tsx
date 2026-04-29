@@ -158,8 +158,9 @@ export default function Stats() {
       {s.by_project.length > 0 && (
         <section>
           <h3 className="text-base font-semibold mb-1">📂 By project</h3>
-          <p className="text-xs text-muted-foreground mb-3">
-            Claude Code conversations grouped by working directory.
+          <p className="text-xs text-muted-foreground mb-3 max-w-2xl leading-relaxed">
+            <em>Claude Code</em> sessions grouped by their working directory. Click a column
+            header to re-sort.
           </p>
           <ProjectTable rows={s.by_project} />
         </section>
@@ -168,8 +169,10 @@ export default function Stats() {
       {s.tool_usage.length > 0 && (
         <section>
           <h3 className="text-base font-semibold mb-1">🛠 Tool usage</h3>
-          <p className="text-xs text-muted-foreground mb-3">
-            Top tools called across all Claude Code sessions.
+          <p className="text-xs text-muted-foreground mb-3 max-w-2xl leading-relaxed">
+            Tools <em>Claude Code</em> invoked while working on your behalf — Bash commands,
+            file reads/edits, sub-agent dispatches, web fetches, etc. Higher counts mean
+            cc relied on that tool more across all your sessions.
           </p>
           <ToolUsageBars rows={s.tool_usage} />
         </section>
