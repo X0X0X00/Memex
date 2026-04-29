@@ -51,25 +51,53 @@ fn is_too_short_or_noisy(p: &str) -> bool {
 }
 
 pub fn extract_ngrams(text: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    // Split into "lines" by both \n and Chinese 。/！/？ — anything paragraph-shaped.
+    for line in text.split(|c: char| c == '\n' || c == '。' || c == '！' || c == '？') {
+        if is_template_line(line) {
+            continue;
+        }
+        out.extend(extract_ngrams_line(line));
+    }
+    out
+}
+
+fn extract_ngrams_line(text: &str) -> Vec<String> {
     let cjk = cjk_ratio(text);
     let (tokens, stop): (Vec<String>, &[&str]) = if cjk > 0.3 {
         (tokenize_zh(text), ZH_STOPWORDS)
     } else {
         (tokenize_en(text), EN_STOPWORDS)
     };
-    let filtered: Vec<&str> = tokens.iter()
+    let filtered: Vec<&str> = tokens
+        .iter()
         .map(String::as_str)
         .filter(|t| !stop.contains(t))
         .collect();
     let mut out = Vec::new();
     for n in 1..=3 {
-        if filtered.len() < n { continue; }
+        if filtered.len() < n {
+            continue;
+        }
         for w in filtered.windows(n) {
             let phrase = if cjk > 0.3 { w.concat() } else { w.join(" ") };
             out.push(phrase.to_lowercase());
         }
     }
     out
+}
+
+/// A line is "template-like" if it contains 3+ structured-bullet markers
+/// like "Option A", "Question 1", "Step 2", "选项 A", "题目 1". These come
+/// from multiple-choice / annotation prompts and pollute top-phrase stats.
+fn is_template_line(line: &str) -> bool {
+    static BULLET: Lazy<regex::Regex> = Lazy::new(|| {
+        regex::Regex::new(
+            r"(?i)\b(option|question|step|task|item|choice|answer|q|选项|题目|问题|步骤)\s*([a-z0-9一二三四五六七八九十]+)",
+        )
+        .unwrap()
+    });
+    BULLET.find_iter(line).count() >= 3
 }
 
 fn cjk_ratio(s: &str) -> f64 {
@@ -153,5 +181,44 @@ mod tests {
         let texts = vec!["one off phrase here".to_string()];
         let r = top_phrases(&texts, 5);
         assert!(r.is_empty(), "single-occurrence phrases should be filtered");
+    }
+
+    #[test]
+    fn template_phrases_are_demoted() {
+        // Multiple-choice annotation template repeats "Question / Option" a lot.
+        let mut texts: Vec<String> = (1..=20)
+            .map(|i| format!("Question {i}. Option A: foo. Option B: bar. Option C: baz. Option D: qux."))
+            .collect();
+        // The user's actual catch-phrase appears far less often.
+        for _ in 0..3 {
+            texts.push("I don't understand this part".to_string());
+            texts.push("I don't understand the result".to_string());
+        }
+        let r = top_phrases(&texts, 10);
+        let phrases: Vec<&str> = r.iter().map(|p| p.phrase.as_str()).collect();
+        let template_in_top3 = phrases
+            .iter()
+            .take(3)
+            .any(|p| p.contains("option") || p.contains("question"));
+        assert!(
+            !template_in_top3,
+            "template phrases should not dominate top 3, got {:?}",
+            phrases
+        );
+        assert!(
+            phrases.iter().any(|p| p.contains("don't understand")),
+            "real catch-phrase should still appear, got {:?}",
+            phrases
+        );
+    }
+
+    #[test]
+    fn template_filter_passes_normal_text() {
+        // A line mentioning "option" once should NOT be flagged.
+        assert!(!is_template_line("I'd choose option A here"));
+        // 3+ Question/Option markers IS a template.
+        assert!(is_template_line(
+            "Question 1. Option A. Option B. Option C."
+        ));
     }
 }
