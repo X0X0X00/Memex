@@ -2,10 +2,9 @@
 
 ## macOS
 
-1. Download `Memex_0.1.0_aarch64.zip` (Apple Silicon) from the Releases page.
-2. Double-click the zip to extract `Memex.app`.
-3. Drag **Memex.app** into your Applications folder.
-4. **First launch (important):** macOS will block the app because it isn't code-signed.
+1. Download `Memex_0.2.0_aarch64.dmg` (Apple Silicon) from the Releases page.
+2. Open the DMG → drag **Memex** into Applications.
+3. **First launch (important):** macOS will block the app because it isn't code-signed.
    Right-click `Memex.app` in Applications → **Open** → confirm in the dialog.
    After this once, you can launch normally.
 

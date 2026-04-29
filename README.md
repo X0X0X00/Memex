@@ -4,7 +4,7 @@
 
 A Tauri desktop app that ingests your data export, renders it like a modern chat UI, and shows you stats about how you actually use AI.
 
-**Status:** v0.1.0 — Phase 1 (ChatGPT + Claude.ai web exports + stats). Roadmap below.
+**Status:** v0.2.0 — Phase 2 (adds Claude Code source with exact tokens + per-message cost + template-pollution filter for top phrases). Roadmap below.
 
 ---
 
@@ -16,7 +16,10 @@ It also answers the questions you actually want answered: *how many conversation
 
 ## Features
 
-- **Auto-detects** ChatGPT export (mapping tree) vs Claude.ai web export (`chat_messages` array) — drop a folder, Memex figures out the format.
+- **Three import sources:**
+  - **Claude Code** — one-click reads `~/.claude/projects/`, exact token counts and per-message model from the API response (most accurate).
+  - **ChatGPT export** — auto-detects the mapping-tree format.
+  - **Claude.ai web export** — auto-detects the `chat_messages` array format.
 - **Conversation viewer** — markdown rendering, code blocks with Shiki syntax highlighting, role-coloured bubbles, per-message token counts.
 - **Library** — searchable list with source/model badges, sort by date.
 - **Stats dashboard:**
@@ -93,7 +96,8 @@ Rust backend parses exports into a unified `(Conversation, Vec<Message>)` schema
 
 ## Roadmap
 
-- **v0.2** — Claude Code source (`~/.claude/projects/*.jsonl` with real token + model data), better top-phrase quality (template-pollution filter), per-model cost detection. See [`docs/superpowers/plans/2026-04-29-memex-phase-2-claude-code-source.md`](docs/superpowers/plans/2026-04-29-memex-phase-2-claude-code-source.md).
+- **v0.1** ✅ Phase 1 — ChatGPT + Claude.ai web exports + stats.
+- **v0.2** ✅ Phase 2 — Claude Code source with exact tokens, per-message cost, template-pollution filter. [Plan](docs/superpowers/plans/2026-04-29-memex-phase-2-claude-code-source.md).
 - **v0.3** — Tantivy full-text search across all messages, "Export Report" → static HTML.
 - **v0.4** — Code signing, GitHub Releases auto-publish, Win + Linux + Intel Mac builds, auto-updater.
 
