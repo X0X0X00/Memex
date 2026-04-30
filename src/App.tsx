@@ -34,7 +34,7 @@ export default function App() {
           ))}
         </nav>
         <div className="mt-auto px-3 text-[11px] text-muted-foreground">
-          v0.3.4 · 100% local
+          v0.3.5 · 100% local
         </div>
       </aside>
       <main className="flex-1 overflow-y-auto h-full">

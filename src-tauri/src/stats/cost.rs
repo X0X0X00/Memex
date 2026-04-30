@@ -84,6 +84,119 @@ pub fn estimate_cost_usd(model: &str, t: &TokenCounts) -> f64 {
         + (t.cache_write as f64) * p.cache_write / m
 }
 
+/// API-equivalent cost for a web export conversation.
+///
+/// Web exports (ChatGPT, Claude.ai) only record per-message *content* tokens.
+/// Real APIs bill the cumulative input on every assistant turn, so
+/// a 20-turn chat costs much more than naive content-token sum.
+///
+/// This function walks messages in order, maintaining a running input
+/// total. On each assistant turn it bills (running_input × input_rate)
+/// + (output × output_rate). Per-message model is preferred; fall back
+/// to `default_model` (e.g. "gpt-4o") if the message has none recorded.
+///
+/// For Claude Code (`source = ClaudeCode`) the API response gives exact
+/// per-call usage including cache reads, so callers should NOT use this
+/// function — they should sum `estimate_cost_usd` per message instead.
+pub fn cumulative_billing_cost(
+    messages: &[crate::schema::Message],
+    default_model: &str,
+) -> f64 {
+    use crate::schema::{Role, TokenCounts as TC};
+    let mut running_input: u64 = 0;
+    let mut total = 0.0;
+    for m in messages {
+        let tokens = match &m.tokens { Some(t) => t, None => continue };
+        let model = m.model.as_deref().unwrap_or(default_model);
+        match m.role {
+            Role::Assistant => {
+                // Bill (cumulative input + this output) for the turn.
+                let billed = TC {
+                    input: running_input,
+                    output: tokens.output,
+                    cache_read: 0,
+                    cache_write: 0,
+                };
+                total += estimate_cost_usd(model, &billed);
+                running_input += tokens.output;
+            }
+            _ => {
+                running_input += tokens.input;
+            }
+        }
+    }
+    total
+}
+
+#[cfg(test)]
+mod cumulative_tests {
+    use super::*;
+    use crate::schema::*;
+
+    fn user(i: u32, toks: u64) -> Message {
+        Message {
+            id: format!("u{i}"), conversation_id: "c".into(), role: Role::User,
+            content: "x".into(), timestamp: Some(0), model: None,
+            tokens: Some(TokenCounts { input: toks, output: 0, cache_read: 0, cache_write: 0 }),
+            tool_name: None,
+        }
+    }
+    fn asst(i: u32, toks: u64, model: &str) -> Message {
+        Message {
+            id: format!("a{i}"), conversation_id: "c".into(), role: Role::Assistant,
+            content: "x".into(), timestamp: Some(0), model: Some(model.into()),
+            tokens: Some(TokenCounts { input: 0, output: toks, cache_read: 0, cache_write: 0 }),
+            tool_name: None,
+        }
+    }
+
+    #[test]
+    fn single_turn_billed_like_naive() {
+        // u(100) → a(800) on gpt-4o: input 100, output 800
+        // gpt-4o: $2.5/M in, $10/M out → 0.00025 + 0.008 = $0.00825
+        let msgs = vec![user(0, 100), asst(0, 800, "gpt-4o")];
+        let c = cumulative_billing_cost(&msgs, "gpt-4o");
+        assert!((c - 0.00825).abs() < 1e-6, "got {c}");
+    }
+
+    #[test]
+    fn multi_turn_input_compounds() {
+        // 3 turns each user 100 / asst 200, on gpt-4o
+        // Turn 1: input=100, output=200
+        // Turn 2: input = 100+200+100 = 400, output=200
+        // Turn 3: input = 400+200+100 = 700, output=200
+        // total input billed = 1200, total output = 600
+        // cost = 1200*$2.5/M + 600*$10/M = 0.003 + 0.006 = $0.009
+        let mut msgs = vec![];
+        for i in 0..3 {
+            msgs.push(user(i, 100));
+            msgs.push(asst(i, 200, "gpt-4o"));
+        }
+        let c = cumulative_billing_cost(&msgs, "gpt-4o");
+        assert!((c - 0.009).abs() < 1e-6, "got {c}");
+    }
+
+    #[test]
+    fn naive_vs_cumulative_diverges_for_long_chats() {
+        // 10 turns on gpt-4o
+        let mut msgs = vec![];
+        for i in 0..10 {
+            msgs.push(user(i, 100));
+            msgs.push(asst(i, 800, "gpt-4o"));
+        }
+        let cumulative = cumulative_billing_cost(&msgs, "gpt-4o");
+        // Naive: input total 1000 + output total 8000, single bill
+        let naive = estimate_cost_usd(
+            "gpt-4o",
+            &TokenCounts { input: 1000, output: 8000, cache_read: 0, cache_write: 0 },
+        );
+        // For 10-turn output-heavy chats on gpt-4o the ratio works out to
+        // ~2.2x (output dominates the bill, but input compounds quadratically).
+        // Output-heavy ratio is the lower bound; input-heavy chats reach 5-10x.
+        assert!(cumulative > naive * 2.0, "cumulative {cumulative} vs naive {naive}");
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

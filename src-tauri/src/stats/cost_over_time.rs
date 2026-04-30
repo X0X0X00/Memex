@@ -95,57 +95,47 @@ pub fn compute(conn: &Connection) -> AppResult<CostSeries> {
     let span_days = (max_ts - min_ts) / 86_400;
     let bucket = pick_bucket(span_days);
 
+    // Bucket each conversation's stored cost at its created_at. Using the
+    // pre-computed `conversations.estimated_cost_usd` keeps this chart
+    // consistent with the top-line "Estimated cost" card — both come from the
+    // same parser-time cumulative-billing calculation. Per-message bucketing
+    // would diverge because it can't reproduce cumulative billing without
+    // walking each conversation's messages in order.
     let mut stmt = conn.prepare(
-        "SELECT m.timestamp,
-                COALESCE(m.model, c.model, '') AS model,
-                c.source AS source,
-                COALESCE(m.tok_input, 0),
-                COALESCE(m.tok_output, 0),
-                COALESCE(m.tok_cache_read, 0),
-                COALESCE(m.tok_cache_write, 0)
-         FROM messages m
-         JOIN conversations c ON c.id = m.conversation_id
-         WHERE m.timestamp IS NOT NULL",
+        "SELECT created_at,
+                COALESCE(model, '') AS model,
+                source,
+                COALESCE(estimated_cost_usd, 0.0) AS cost
+         FROM conversations
+         WHERE created_at > 0 AND estimated_cost_usd > 0",
     )?;
     let rows = stmt.query_map([], |r| {
         Ok((
             r.get::<_, i64>(0)?,
             r.get::<_, String>(1)?,
             r.get::<_, String>(2)?,
-            r.get::<_, i64>(3)?,
-            r.get::<_, i64>(4)?,
-            r.get::<_, i64>(5)?,
-            r.get::<_, i64>(6)?,
+            r.get::<_, f64>(3)?,
         ))
     })?;
 
     use std::collections::BTreeMap;
     let mut acc: BTreeMap<String, BTreeMap<String, f64>> = BTreeMap::new();
     for row in rows {
-        let (ts, model, source, ti, to, tcr, tcw) = row?;
+        let (ts, model, source, cost) = row?;
         let label = bucket_label(ts, bucket);
-        // When the message has no concrete model, fall back per-source so the
-        // cost lookup matches what the conversation-level cost used at parse
-        // time. This keeps the cost-over-time chart consistent with the
-        // top-line estimated_cost_usd card.
+        // Match the parser-time fallback so the chart's bands are labelled
+        // the same way as how the cost was computed. Empty model on
+        // openai → GPT-4o band, empty on claude_* → Claude Sonnet band.
         let effective_model: &str = if model.is_empty() {
             match source.as_str() {
                 "openai" => "gpt-4o",
-                "claude_web" => "claude",
-                "claude_code" => "claude",
+                "claude_web" | "claude_code" => "claude",
                 _ => "",
             }
         } else {
             model.as_str()
         };
         let group = model_group(effective_model).to_string();
-        let toks = TokenCounts {
-            input: ti as u64,
-            output: to as u64,
-            cache_read: tcr as u64,
-            cache_write: tcw as u64,
-        };
-        let cost = estimate_cost_usd(effective_model, &toks);
         if cost > 0.0 {
             *acc.entry(label).or_default().entry(group).or_insert(0.0) += cost;
         }
@@ -209,162 +199,66 @@ mod tests {
         assert!(r.points.is_empty());
     }
 
-    #[test]
-    fn compute_falls_back_to_gpt4o_for_openai_with_no_model() {
+    fn seed_conv(conn: &rusqlite::Connection, id: &str, source: crate::schema::Source, model: Option<String>, ts: i64, cost: f64) {
         use crate::db::*;
         use crate::schema::*;
-
-        let conn = open_in_memory().unwrap();
         upsert_conversation(
-            &conn,
+            conn,
             &Conversation {
-                id: "c1".into(),
-                source: Source::Openai,
-                native_id: "x".into(),
+                id: id.into(),
+                source,
+                native_id: id.into(),
                 title: "t".into(),
-                created_at: 1700000000,
-                updated_at: 1700000000,
-                model: None, // ← no model recorded on conv
+                created_at: ts,
+                updated_at: ts,
+                model,
                 project: None,
                 message_count: 1,
                 tokens: TokenCounts::zero(),
-                estimated_cost_usd: 0.0,
+                estimated_cost_usd: cost,
             },
         )
         .unwrap();
-        insert_message(
-            &conn,
-            0,
-            &Message {
-                id: "m1".into(),
-                conversation_id: "c1".into(),
-                role: Role::Assistant,
-                content: "x".into(),
-                timestamp: Some(1700000000),
-                model: None, // ← no model on message either
-                tokens: Some(TokenCounts {
-                    input: 0,
-                    output: 1_000_000,
-                    cache_read: 0,
-                    cache_write: 0,
-                }),
-                tool_name: None,
-            },
-        )
-        .unwrap();
+    }
 
+    #[test]
+    fn compute_falls_back_to_gpt4o_for_openai_with_no_model() {
+        use crate::schema::Source;
+        let conn = crate::db::open_in_memory().unwrap();
+        seed_conv(&conn, "c1", Source::Openai, None, 1700000000, 12.34);
         let r = compute(&conn).unwrap();
         assert_eq!(r.points.len(), 1);
         let p = &r.points[0];
         assert_eq!(p.by_model_group.len(), 1);
         assert_eq!(p.by_model_group[0].0, "GPT-4o");
-        // 1M output * $10/M = $10
-        assert!((p.by_model_group[0].1 - 10.0).abs() < 0.01);
+        assert!((p.by_model_group[0].1 - 12.34).abs() < 0.01);
     }
 
     #[test]
     fn compute_falls_back_to_claude_sonnet_for_claude_web_with_no_model() {
-        use crate::db::*;
-        use crate::schema::*;
-
-        let conn = open_in_memory().unwrap();
-        upsert_conversation(
-            &conn,
-            &Conversation {
-                id: "c1".into(),
-                source: Source::ClaudeWeb,
-                native_id: "x".into(),
-                title: "t".into(),
-                created_at: 1700000000,
-                updated_at: 1700000000,
-                model: None,
-                project: None,
-                message_count: 1,
-                tokens: TokenCounts::zero(),
-                estimated_cost_usd: 0.0,
-            },
-        )
-        .unwrap();
-        insert_message(
-            &conn,
-            0,
-            &Message {
-                id: "m1".into(),
-                conversation_id: "c1".into(),
-                role: Role::Assistant,
-                content: "x".into(),
-                timestamp: Some(1700000000),
-                model: None,
-                tokens: Some(TokenCounts {
-                    input: 0,
-                    output: 1_000_000,
-                    cache_read: 0,
-                    cache_write: 0,
-                }),
-                tool_name: None,
-            },
-        )
-        .unwrap();
-
+        use crate::schema::Source;
+        let conn = crate::db::open_in_memory().unwrap();
+        seed_conv(&conn, "c1", Source::ClaudeWeb, None, 1700000000, 5.67);
         let r = compute(&conn).unwrap();
-        // 'claude' in price_for falls back to Sonnet pricing → $15/M output
         assert_eq!(r.points.len(), 1);
         let p = &r.points[0];
         assert_eq!(p.by_model_group[0].0, "Claude Sonnet");
-        assert!((p.by_model_group[0].1 - 15.0).abs() < 0.01);
+        assert!((p.by_model_group[0].1 - 5.67).abs() < 0.01);
     }
 
     #[test]
     fn compute_aggregates_by_model_group_and_bucket() {
-        use crate::db::*;
-        use crate::schema::*;
-
-        let conn = open_in_memory().unwrap();
-        upsert_conversation(
-            &conn,
-            &Conversation {
-                id: "c1".into(),
-                source: Source::ClaudeCode,
-                native_id: "x".into(),
-                title: "t".into(),
-                created_at: 1700000000,
-                updated_at: 1700100000,
-                model: Some("claude-opus-4-7".into()),
-                project: None,
-                message_count: 2,
-                tokens: TokenCounts::zero(),
-                estimated_cost_usd: 0.0,
-            },
-        )
-        .unwrap();
-        for (i, ts) in [1700000000i64, 1700000060].iter().enumerate() {
-            insert_message(
-                &conn,
-                i as u32,
-                &Message {
-                    id: format!("m-{i}"),
-                    conversation_id: "c1".into(),
-                    role: Role::Assistant,
-                    content: "x".into(),
-                    timestamp: Some(*ts),
-                    model: Some("claude-opus-4-7".into()),
-                    tokens: Some(TokenCounts {
-                        input: 0,
-                        output: 1_000_000,
-                        cache_read: 0,
-                        cache_write: 0,
-                    }),
-                    tool_name: None,
-                },
-            )
-            .unwrap();
-        }
+        use crate::schema::Source;
+        let conn = crate::db::open_in_memory().unwrap();
+        // Two convs at the same timestamp so they land in the same bucket
+        // regardless of which bucket-kind is picked.
+        seed_conv(&conn, "c1", Source::ClaudeCode, Some("claude-opus-4-7".into()), 1700000000, 75.0);
+        seed_conv(&conn, "c2", Source::ClaudeCode, Some("claude-opus-4-7".into()), 1700000000, 75.0);
         let r = compute(&conn).unwrap();
         assert_eq!(r.points.len(), 1);
         let p = &r.points[0];
         assert_eq!(p.by_model_group.len(), 1);
         assert_eq!(p.by_model_group[0].0, "Claude Opus");
-        // 1M output * 2 messages * $75/M = $150
         assert!((p.by_model_group[0].1 - 150.0).abs() < 0.01);
     }
 }

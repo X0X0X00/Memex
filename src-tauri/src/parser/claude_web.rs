@@ -1,7 +1,7 @@
 use crate::error::AppResult;
 use crate::parser::tokens::count_tokens;
 use crate::schema::*;
-use crate::stats::cost::estimate_cost_usd;
+use crate::stats::cost::cumulative_billing_cost;
 use chrono::DateTime;
 use serde::Deserialize;
 use serde_json::Value;
@@ -98,10 +98,33 @@ fn build_one(r: RawConv) -> Option<(Conversation, Vec<Message>)> {
             totals.cache_write += t.cache_write;
         }
     }
-    // Claude.ai web export doesn't record per-message model. Default to "claude"
-    // which falls back to Sonnet pricing in the cost table.
-    let model_for_cost = "claude";
-    let estimated_cost_usd = estimate_cost_usd(model_for_cost, &totals);
+    // Claude.ai web has an invisible system prompt (Claude character +
+    // artifacts/analysis tool descriptions + safety + style preferences)
+    // that the API re-sends every turn. Anthropic's published system
+    // prompt is around 3000 tokens. Inject a synthetic system message so
+    // cumulative billing accounts for it.
+    let mut messages_for_cost = Vec::with_capacity(messages.len() + 1);
+    messages_for_cost.push(Message {
+        id: format!("{conv_id}:__system_prompt__"),
+        conversation_id: conv_id.clone(),
+        role: Role::System,
+        content: String::new(),
+        timestamp: messages.first().and_then(|m| m.timestamp),
+        model: None,
+        tokens: Some(TokenCounts {
+            input: 3000,
+            output: 0,
+            cache_read: 0,
+            cache_write: 0,
+        }),
+        tool_name: None,
+    });
+    messages_for_cost.extend(messages.iter().cloned());
+
+    // Claude.ai web export doesn't record per-message model. Default to
+    // "claude" (Sonnet pricing). Cumulative billing → input compounds over
+    // the length of the chat, just like the API would charge.
+    let estimated_cost_usd = cumulative_billing_cost(&messages_for_cost, "claude");
 
     let conv = Conversation {
         id: conv_id,
